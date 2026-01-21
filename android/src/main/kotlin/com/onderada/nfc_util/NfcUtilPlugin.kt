@@ -50,6 +50,7 @@ class NfcUtilPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "Nfc#isAvailable" -> result.success(adapter?.isEnabled == true)
             "Nfc#startSession" -> startSession(result, call)
             "Nfc#stopSession" -> stopSession(result)
+            "Nfc#disposeTag" -> disposeTag(call, result)
             else -> result.notImplemented()
         }
     }
@@ -75,15 +76,23 @@ class NfcUtilPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         Log.d("NfcUtilPlugin", "flags: $flags")
 
 
-        adapter.enableReaderMode(currentActivity, { tag ->
+        /*adapter.enableReaderMode(currentActivity, { tag ->
             val handle = UUID.randomUUID().toString()
-            Log.d("NfcUtilPlugin", "handle: $handle")
             tags[handle] = tag
             currentActivity.runOnUiThread {
                 channel.invokeMethod(
                     "onDiscovered",
                     mapOf("handle" to handle, "id" to tag.id.joinToString("") { "%02x".format(it) })
                 )
+            }
+        }, flags, null)*/
+        adapter.enableReaderMode(currentActivity, { tag ->
+            val handle = UUID.randomUUID().toString()
+            tags[handle] = tag
+            currentActivity.runOnUiThread {
+                channel.invokeMethod(
+                    "onDiscovered",
+                    getTagMap(tag).toMutableMap().apply { put("handle", handle) })
             }
         }, flags, null)
 
@@ -101,6 +110,14 @@ class NfcUtilPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
 
         adapter.disableReaderMode(currentActivity)
+        result.success(null)
+    }
+
+    private fun disposeTag(call: MethodCall, result: MethodChannel.Result) {
+        val handle = call.argument<String>("handle")
+        if (handle != null) {
+            tags.remove(handle)
+        }
         result.success(null)
     }
 

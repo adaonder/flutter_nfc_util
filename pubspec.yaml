@@ -1,6 +1,6 @@
 name: nfc_util
 description: "A Flutter plugin providing access to NFC features on Android and iOS."
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/adaonder/flutter_nfc_util
 
 environment:
