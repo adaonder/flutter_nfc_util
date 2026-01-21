@@ -1,3 +1,7 @@
+## 1.0.1
+
+* Swift Package Manager support
+
 ## 1.0.0
 
 * flutter: min 3.32.0
