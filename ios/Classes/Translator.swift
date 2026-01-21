@@ -1,4 +1,5 @@
 import CoreNFC
+import Flutter
 
 @available(iOS 13.0, *)
 func getPollingOption(_ arg: [String]) -> NFCTagReaderSession.PollingOption {

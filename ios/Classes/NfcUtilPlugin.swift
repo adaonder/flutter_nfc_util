@@ -1,9 +1,15 @@
+import CoreNFC
 import Flutter
 import UIKit
 
-public class NfcUtilPlugin: NSObject, FlutterPlugin {
+public class SwiftNfcUtilPlugin: NSObject, FlutterPlugin {
 
     private let channel: FlutterMethodChannel
+
+    private init(channel: FlutterMethodChannel) {
+        self.channel = channel
+        super.init()
+    }
 
     private var _session: Any?
     @available(iOS 13.0, *)
@@ -25,7 +31,7 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "nfc_util", binaryMessenger: registrar.messenger())
-    let instance = NfcUtilPlugin()
+    let instance = SwiftNfcUtilPlugin(channel: channel)
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
 
@@ -734,7 +740,7 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
 }
 
 @available(iOS 13.0, *)
-extension SwiftNfcManagerPlugin: NFCTagReaderSessionDelegate {
+extension SwiftNfcUtilPlugin: NFCTagReaderSessionDelegate {
     public func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {
         // no op
     }
