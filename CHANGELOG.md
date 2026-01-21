@@ -1,3 +1,7 @@
+## 1.0.0
+
+* flutter: min 3.32.0
+
 ## 0.1.1
 
 * Nfc#disposeTag fixed.
