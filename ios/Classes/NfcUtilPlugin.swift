@@ -94,11 +94,19 @@ public class SwiftNfcUtilPlugin: NSObject, FlutterPlugin {
 
     @available(iOS 13.0, *)
     private func handleNfcStartSession(_ arguments: [String : Any?], result: @escaping FlutterResult) {
-        session = NFCTagReaderSession(pollingOption: getPollingOption(arguments["pollingOptions"] as! [String]), delegate: self)
-        if let alertMessage = arguments["alertMessage"] as? String { session?.alertMessage = alertMessage }
-        shouldInvalidateSessionAfterFirstRead = arguments["invalidateAfterFirstRead"] as? Bool ?? true
-        session?.begin()
-        result(nil)
+        DispatchQueue.main.async {
+            self.tags = [:]
+            self.session = NFCTagReaderSession(
+                pollingOption: getPollingOption(arguments["pollingOptions"] as! [String]),
+                delegate: self
+            )
+            if let alertMessage = arguments["alertMessage"] as? String {
+                self.session?.alertMessage = alertMessage
+            }
+            self.shouldInvalidateSessionAfterFirstRead = arguments["invalidateAfterFirstRead"] as? Bool ?? true
+            self.session?.begin()
+            result(nil)
+        }
     }
 
     @available(iOS 13.0, *)
@@ -746,35 +754,46 @@ extension SwiftNfcUtilPlugin: NFCTagReaderSessionDelegate {
     }
 
     public func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
-        DispatchQueue.main.sync {
-            channel.invokeMethod("onError", arguments: getErrorMap(error))
+        DispatchQueue.main.async {
+            self.session = nil
+            self.tags = [:]
+            self.channel.invokeMethod("onError", arguments: getErrorMap(error))
         }
     }
 
     public func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
         let handle = NSUUID().uuidString
 
-        session.connect(to: tags.first!) { error in
+        guard let firstTag = tags.first else {
+            session.restartPolling()
+            return
+        }
+
+        session.connect(to: firstTag) { error in
             if let error = error {
                 // skip tag detection
                 print(error)
-                if !self.shouldInvalidateSessionAfterFirstRead { session.restartPolling() }
+                session.restartPolling()
                 return
             }
 
-            getNFCTagMapAsync(tags.first!) { tag, data, error in
+            getNFCTagMapAsync(firstTag) { tag, data, error in
                 if let error = error {
                     // skip tag detection
                     print(error)
-                    if !self.shouldInvalidateSessionAfterFirstRead { session.restartPolling() }
+                    session.restartPolling()
                     return
                 }
 
                 self.tags[handle] = tag
-                DispatchQueue.main.sync {
+                DispatchQueue.main.async {
                     self.channel.invokeMethod("onDiscovered", arguments: data.merging(["handle": handle]) { cur, _ in cur })
                 }
-                if !self.shouldInvalidateSessionAfterFirstRead { session.restartPolling() }
+                if self.shouldInvalidateSessionAfterFirstRead {
+                    session.invalidate()
+                } else {
+                    session.restartPolling()
+                }
             }
         }
     }

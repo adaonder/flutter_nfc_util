@@ -1,3 +1,7 @@
+## 1.0.3
+
+* iOS first scan bug fixed.
+
 ## 1.0.2
 
 * Swift Package Manager support
