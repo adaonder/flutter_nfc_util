@@ -100,8 +100,23 @@ class NfcCallbacks implements NfcFlutterApi {
 
   @override
   void onError(SessionKindPigeon kind, NfcErrorPigeon error) {
-    final handler = kind == SessionKindPigeon.vas ? vasErrorHandler : errorHandler;
-    handler?.call(errorFromWire(error));
+    final isVas = kind == SessionKindPigeon.vas;
+    final arms = isVas ? _vasArms : _sessionArms;
+
+    // Captured before dispatching, not after. The handler runs synchronously, and an app
+    // that restarts from onError -- which is what the docs tell it to do -- pushes its new
+    // arm before this returns; popping the top afterwards would deafen the session it just
+    // started. Removing the arm we actually dispatched to, by identity, is safe either way.
+    final arm = arms.isEmpty ? null : arms.last;
+
+    (isVas ? vasErrorHandler : errorHandler)?.call(errorFromWire(error));
+
+    // A session that ended by itself -- cancelled, timed out, invalidated -- never runs the
+    // disarm closure that a stopSession would, so without this its handlers stay on the
+    // stack for the life of the process.
+    if (error.sessionEnded && arm != null && arms.remove(arm)) {
+      isVas ? _applyTopVasArm() : _applyTopSessionArm();
+    }
   }
 
   @override

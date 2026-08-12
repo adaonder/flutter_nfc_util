@@ -101,9 +101,12 @@ class NfcUtilIos {
   /// cards, membership cards -- rather than NFC tags.
   ///
   /// Requires `com.apple.developer.nfc.readersession.formats` to include `VAS` in the app's
-  /// entitlements, and the pass type identifiers to be listed in `Info.plist` under
-  /// `com.apple.developer.nfc.readersession.iso7816.select-identifiers`. Without those the
-  /// session fails asynchronously through `onError`.
+  /// *entitlements file*, which is not part of Xcode's Near Field Communication Tag Reading
+  /// capability -- the App ID has to be provisioned for VAS separately -- plus
+  /// `NFCReaderUsageDescription` in `Info.plist`. Nothing else: the pass type identifiers
+  /// are supplied per command through [VasCommandConfiguration.passTypeIdentifier], not by
+  /// any plist key. A missing entitlement surfaces asynchronously through `onError` as a
+  /// security violation. See the README's iOS setup list.
   Future<void> vasSessionBegin({
     required List<VasCommandConfiguration> configurations,
     required void Function(List<VasResponse> responses) onResponse,

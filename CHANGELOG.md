@@ -1,3 +1,63 @@
+## 3.0.1
+
+Two things that are cheap to change now and expensive once apps depend on them. 3.0.0 was
+never published, so this supersedes it.
+
+* **A `PlatformException` from a tag operation now carries the same code on both platforms.**
+  iOS spelled two of them `invalid_parameter` and `no_result` while Android spelled the same
+  conditions `invalidParameter` and `unknown`, so `e.code == 'invalid_parameter'` matched on
+  one platform and never on the other, and
+  `NfcAndroidErrorCode.values.byName(e.code)` -- which the docs advertise -- threw on iOS for
+  the two most ordinary failures. Every tag-operation code now spells an enum value.
+
+  The three codes that describe the session rather than a tag name no enum value and stay as
+  they are, but are no longer literals a caller has to retype: `NfcErrorCodes.unavailable`,
+  `.sessionAlreadyExists` and `.noActivity`.
+
+* **Consumers no longer get a build warning naming this plugin.** It applied the Kotlin
+  Gradle plugin itself, which the Flutter tool warns about on every build of every app that
+  depends on it -- "future versions of Flutter will fail to build". The Kotlin plugin now
+  comes from the consuming project, as the current plugin template does, and `jvmTarget`
+  moved to the top-level `kotlin` block with it.
+
+* **A session that ends by itself now disarms itself.** Only `stopSession` ran the teardown,
+  so a scan the user cancelled or that timed out left its callbacks on the handler stack for
+  the life of the process. `onError` now drops the arm it dispatched to when the session is
+  over -- by identity, so restarting from inside `onError`, which is what the docs suggest,
+  is not deafened by its own cleanup.
+
+* **iOS background tag reading adopts the scene lifecycle.** It rode Flutter's app-delegate
+  fallback, which Flutter's own headers describe as the path for plugins that are not
+  scene-aware. A tag tapped while the app runs now arrives through `scene(_:continue:)`, and
+  a tag that launched the app through `scene(_:willConnectTo:options:)` -- the only place a
+  launch-time activity appears, since UIKit never calls the continue hook at launch. The
+  app-delegate hooks stay for non-scene apps.
+
+* **A failed `registerAids` no longer leaves the app enrolled as a card.** Enabling the
+  emulation component is persistent -- it survives process death, reboot and app update -- and
+  it was switched on before the registration was attempted and never put back if the
+  registration threw or was refused. An app whose call returned false was left claiming the
+  placeholder AID forever, answering every reader with `6D00`. Both paths now roll it back.
+
+  That persistence is now documented, on `registerAids`, on `unregisterAids` and in the
+  README: `unregisterAids()` is the only way to undo a successful registration short of
+  uninstalling, and the README's sample AID is called out as a sample.
+
+### Documentation
+
+* `startSession`'s per-parameter comments were dropped by dartdoc, hover and autocomplete
+  alike, so three options were documented nowhere a caller looks. They are in the method doc
+  now.
+
+* The "new in 3.0.0" list named `restartPolling` and `setAlertMessage`, which do not exist:
+  they are `NfcUtilIos.tagSessionRestartPolling`, `tagSessionSetAlertMessage` and
+  `vasSessionSetAlertMessage`. The two session controls also got a snippet in the README,
+  which never showed them.
+
+* `vasSessionBegin` claimed to need the ISO 7816 select-identifiers key. That belongs to tag
+  sessions; a VAS session needs the entitlement and `NFCReaderUsageDescription`, and takes
+  its pass type identifiers per command.
+
 ## 3.0.0
 
 A full rewrite, and the first release since 2.2.0. Every import and most names changed, the

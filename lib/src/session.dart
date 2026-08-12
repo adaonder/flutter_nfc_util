@@ -61,9 +61,22 @@ class NfcUtil {
   /// measurably faster, at the cost of `Ndef.from(tag)` returning null. Use it when the
   /// tag's NDEF content does not interest you.
   ///
+  /// The rest, briefly:
+  ///
+  /// * `alertMessageIos` is the text on the system reader sheet.
+  /// * `invalidateAfterFirstReadIos: false` keeps the session polling after each tag, so one
+  ///   session reads many; iOS polls again only once `onDiscovered` returns.
+  /// * `onBecameActiveIos` fires once the reader sheet is up and actually polling.
+  /// * `noPlatformSoundsAndroid` suppresses the system's tag-discovery sound.
+  /// * `discoverNfcBarcodeAndroid` is what makes barcode (Kovio) tags discoverable at all;
+  ///   without it they are never reported, whatever else the session asks for.
+  /// * `presenceCheckDelayAndroid` is how long the platform waits between presence checks.
+  ///   A longer delay leaves more airtime for your own commands.
+  ///
   /// Throws a `PlatformException` when the session cannot start, including
-  /// `session_already_exists` when one is still running. Unlike 2.x, both platforms report
-  /// that the same way; Android used to replace the running session in silence.
+  /// [NfcErrorCodes.sessionAlreadyExists] when one is still running. Unlike 2.x, both
+  /// platforms report that the same way; Android used to replace the running session in
+  /// silence.
   Future<void> startSession({
     required Future<void> Function(NfcTag tag) onDiscovered,
     Future<void> Function(NfcError error)? onError,

@@ -620,17 +620,28 @@ class NfcUtilPlugin :
         // The service ships disabled so a reader-only app does not appear in the system's
         // card-emulation registry. Asking to register AIDs is the point at which the app has
         // said it wants to be a card.
+        //
+        // Enabling a component is persistent: it survives process death, reboot and app
+        // update. So every path that does not end in a live registration has to put it back,
+        // or a failed call would leave the app enrolled forever, answering other people's
+        // readers with the placeholder AID.
         setApduServiceEnabled(true)
 
         val registered = runCatching { emulation.registerAidsForService(component, CardEmulation.CATEGORY_OTHER, aids) }
         registered.onFailure {
+            setApduServiceEnabled(false)
             return callback(Result.failure(FlutterErrorOf("unavailable", it.message ?: "")))
+        }
+
+        if (!registered.getOrDefault(false)) {
+            setApduServiceEnabled(false)
+            return callback(Result.success(false))
         }
 
         // Claimed only once the app has actually opted into emulation, so a background engine
         // from an unrelated plugin cannot take the APDU stream from the engine on screen.
-        if (registered.getOrDefault(false)) NfcUtilApduService.activeBridge = this
-        callback(Result.success(registered.getOrDefault(false)))
+        NfcUtilApduService.activeBridge = this
+        callback(Result.success(true))
     }
 
     override fun hceUnregisterAids(callback: (Result<Boolean>) -> Unit) {

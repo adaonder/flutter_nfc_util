@@ -539,6 +539,62 @@ void main() {
     });
   });
 
+  group('a session that ends by itself disarms itself', () {
+    test('an ended session stops delivering without a stopSession call', () async {
+      var delivered = 0;
+      await NfcUtil.instance.startSession(onDiscovered: (_) async => delivered++, onError: (_) async {});
+
+      await deliverError(NfcErrorPigeon(
+        source: ErrorSourcePigeon.ios,
+        iosCode: ReaderErrorCodePigeon.userCanceled,
+        message: 'cancelled',
+        sessionEnded: true,
+      ));
+
+      await deliverTag(plainTag('after-cancel'));
+      expect(delivered, 0, reason: 'the handlers go with the session that owned them');
+      expect(host.disposed, contains('after-cancel'));
+    });
+
+    test('a failure that leaves the session alive keeps the handlers armed', () async {
+      var delivered = 0;
+      await NfcUtil.instance.startSession(onDiscovered: (_) async => delivered++, onError: (_) async {});
+
+      // Android reports an unreadable tag without ending reader mode.
+      await deliverError(NfcErrorPigeon(
+        source: ErrorSourcePigeon.android,
+        androidCode: AndroidErrorCodePigeon.io,
+        message: 'one bad tag',
+        sessionEnded: false,
+      ));
+
+      await deliverTag(plainTag('next-tag'));
+      expect(delivered, 1);
+    });
+
+    test('restarting from inside onError is not deafened by the disarm', () async {
+      // The handler runs synchronously, so the restart pushes its arm before onError
+      // returns. Popping the top afterwards would have killed the session just started.
+      var second = 0;
+      await NfcUtil.instance.startSession(
+        onDiscovered: (_) async {},
+        onError: (_) async {
+          await NfcUtil.instance.startSession(onDiscovered: (_) async => second++);
+        },
+      );
+
+      await deliverError(NfcErrorPigeon(
+        source: ErrorSourcePigeon.ios,
+        iosCode: ReaderErrorCodePigeon.sessionTimeout,
+        message: 'timed out',
+        sessionEnded: true,
+      ));
+
+      await deliverTag(plainTag('to-the-restart'));
+      expect(second, 1);
+    });
+  });
+
   group('sessionEnded', () {
     test('tells a retryable failure from a dead session', () async {
       final ended = <bool>[];

@@ -62,11 +62,23 @@ class HostCardEmulation {
   /// Registered at run time against the plugin's own service, so an app does not have to
   /// ship a fixed AID list in its manifest and can change the set without a release.
   ///
+  /// **This changes persistent device state.** The emulation service ships disabled, and a
+  /// successful call enables it as a package component and stores the AID group with the
+  /// Android framework. Both survive the process being killed, the phone rebooting and the
+  /// app being updated: from here on the device answers readers for these AIDs whenever the
+  /// app is installed, whether or not it is running. [unregisterAids] is the only way back
+  /// short of uninstalling. Pair the two, and do not call this speculatively.
+  ///
   /// Returns false when Android refuses the set -- most often because another app already
-  /// holds one of the AIDs in a category it owns.
+  /// holds one of the AIDs in a category it owns. A call that returns false or throws leaves
+  /// nothing behind; the component is put back the way it was.
   Future<bool> registerAids(List<String> aids) => androidApi.hceRegisterAids(aids);
 
-  /// Drops every AID registered by [registerAids].
+  /// Drops every AID registered by [registerAids] and disables the emulation service again,
+  /// taking the app back out of the system's card-emulation registry.
+  ///
+  /// This is the counterpart to [registerAids] and the only way to undo it. An app that
+  /// never calls it stays enrolled after it is closed.
   Future<bool> unregisterAids() => androidApi.hceUnregisterAids();
 
   /// Answers the APDU most recently delivered to [onApduReceived].

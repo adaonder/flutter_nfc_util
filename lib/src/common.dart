@@ -10,7 +10,7 @@ import 'pigeon.g.dart';
 /// Android's `onTagFromIntent`. The native handle is released as soon as that callback's
 /// future completes, so do the tag I/O inside it. The callback is awaited before the
 /// platform touches the tag again, so there is no rush; but a tag stored for a later screen
-/// fails with `invalid_parameter` even though the session is still open.
+/// fails with `invalidParameter` even though the session is still open.
 ///
 /// What was copied at discovery stays readable afterwards -- [id], [techList] and
 /// `Ndef.from(tag)?.cachedMessage` -- so keeping the tag as a record of the scan is fine.
@@ -53,6 +53,26 @@ class NfcTag {
 
   @override
   String toString() => 'NfcTag(${id == null ? 'no id' : _hex(id!)}${techList.isEmpty ? '' : ', $techList'})';
+}
+
+/// The `code` on a `PlatformException` from a call that never reached a tag.
+///
+/// Every *tag operation* fails with a code that spells an [NfcAndroidErrorCode] or an
+/// [NfcReaderErrorCode] value, so `NfcAndroidErrorCode.values.byName(e.code)` resolves it.
+/// These three describe the session itself and name no enum value, so they are given here
+/// rather than left as literals for callers to retype.
+abstract final class NfcErrorCodes {
+  /// The device has no NFC adapter, the radio is unusable, or the platform refused to start
+  /// the session at all.
+  static const String unavailable = 'unavailable';
+
+  /// A session is already running. Stop it before starting another; both platforms refuse
+  /// rather than replacing it.
+  static const String sessionAlreadyExists = 'session_already_exists';
+
+  /// Android only. The plugin is attached to an engine but not to an activity, which is the
+  /// window between a configuration change tearing one down and the next being attached.
+  static const String noActivity = 'no_activity';
 }
 
 /// Whether NFC can be used on this device right now.

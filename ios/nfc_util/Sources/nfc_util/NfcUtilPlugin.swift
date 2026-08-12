@@ -75,7 +75,7 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
   }
 
   private static func notFound<T>() -> Result<T, Error> {
-    .failure(PigeonError(code: "invalid_parameter", message: "Tag is not found.", details: nil))
+    .failure(PigeonError(code: "invalidParameter", message: "Tag is not found.", details: nil))
   }
 
   private static func unavailable<T>(_ message: String) -> Result<T, Error> {
@@ -84,7 +84,7 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
 
   private static func outOfRange<T>(_ name: String, _ value: Int64) -> Result<T, Error> {
     .failure(PigeonError(
-      code: "invalid_parameter",
+      code: "invalidParameter",
       message: "\(name) must be 0...255, got \(value).",
       details: nil
     ))
@@ -136,7 +136,7 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
       } else if let raw = raw {
         completion(.success(transform(raw)))
       } else {
-        completion(.failure(PigeonError(code: "no_result", message: "The tag returned nothing.", details: nil)))
+        completion(.failure(PigeonError(code: "unknown", message: "The tag returned nothing.", details: nil)))
       }
     }
   }
@@ -301,7 +301,7 @@ extension NfcUtilPlugin: NfcIosHostApi {
     }
     guard !configurations.isEmpty else {
       completion(.failure(PigeonError(
-        code: "invalid_parameter",
+        code: "invalidParameter",
         message: "At least one pass configuration is required.",
         details: nil
       )))
@@ -907,7 +907,7 @@ extension NfcUtilPlugin {
       guard let apdu = NFCISO7816APDU(data: data.data) else {
         TagMapper.onMain {
           completion(.failure(PigeonError(
-            code: "invalid_parameter",
+            code: "invalidParameter",
             message: "The bytes are not a well-formed command APDU.",
             details: nil
           )))
@@ -971,7 +971,7 @@ extension NfcUtilPlugin {
       guard let apdu = NFCISO7816APDU(data: data.data) else {
         TagMapper.onMain {
           completion(.failure(PigeonError(
-            code: "invalid_parameter",
+            code: "invalidParameter",
             message: "The bytes are not a well-formed command APDU.",
             details: nil
           )))
@@ -1098,7 +1098,46 @@ extension NfcUtilPlugin: NFCVASReaderSessionDelegate {
 }
 
 // ---------------------------------------------------------------------------------------
-// Background tag reading
+// Background tag reading -- scene lifecycle
+// ---------------------------------------------------------------------------------------
+
+extension NfcUtilPlugin: FlutterSceneLifeCycleDelegate {
+
+  /// A tag tapped while the app is running or suspended.
+  ///
+  /// Without this the delivery relies on Flutter forwarding to the app-delegate hook, which
+  /// its own headers describe as a fallback for plugins that are not scene-aware.
+  public func scene(_ scene: UIScene, continue userActivity: NSUserActivity) -> Bool {
+    let payload = userActivity.ndefMessagePayload
+    guard !payload.records.isEmpty else { return false }
+
+    let wire = TagMapper.messageToWire(payload)
+    TagMapper.onMain { [weak self] in self?.flutterApi?.onNdefFromBackground(message: wire) { _ in } }
+
+    // Never claims the activity: the app may also want to route the URL.
+    return false
+  }
+
+  /// A tag that launched the app.
+  ///
+  /// UIKit does not call `scene(_:continueUserActivity:)` at launch -- the activity arrives
+  /// only in the connection options -- so this is the sole path by which
+  /// `takeInitialNdefMessage` is ever populated in a scene-based app.
+  public func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions?
+  ) -> Bool {
+    // Nullable per FlutterSceneLifeCycle.h: another plugin may already have handled the
+    // connection.
+    guard let activities = connectionOptions?.userActivities else { return false }
+    for activity in activities { captureLaunchActivity(activity) }
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------------------------
+// Background tag reading -- application lifecycle
 // ---------------------------------------------------------------------------------------
 
 extension NfcUtilPlugin {
@@ -1121,6 +1160,16 @@ extension NfcUtilPlugin {
   ) -> Bool {
     launchedByUserActivity = launchOptions[UIApplication.LaunchOptionsKey.userActivityDictionary] != nil
     return true
+  }
+
+  /// Records an NDEF message the app was launched with, from either lifecycle.
+  ///
+  /// Split out because the launch case arrives through two different doors and neither is
+  /// the one that serves a tap on a running app.
+  private func captureLaunchActivity(_ userActivity: NSUserActivity) {
+    let payload = userActivity.ndefMessagePayload
+    guard !payload.records.isEmpty else { return }
+    pendingInitialNdefMessage = TagMapper.messageToWire(payload)
   }
 
   /// Catches an NDEF message read by iOS with no app running.

@@ -41,7 +41,7 @@ await NfcUtil.instance.startSession(
 
 ```yaml
 dependencies:
-  nfc_util: ^3.0.0
+  nfc_util: ^3.0.1
 ```
 
 Requires Flutter 3.44, Android API 24, iOS 15.6.
@@ -136,6 +136,13 @@ running is rejected with `session_already_exists` on **both** platforms.
 only after your `onDiscovered` returns, so the tag is never pulled out from under an app
 that is still reading it.
 
+While an iOS session is up you can narrate it and move it along:
+
+```dart
+await ios.NfcUtilIos.instance.tagSessionSetAlertMessage('Hold still, writing…');
+await ios.NfcUtilIos.instance.tagSessionRestartPolling();   // drop this tag, look for the next
+```
+
 ## NDEF
 
 The record types both build and parse, and the codec is pure Dart — a message can be
@@ -225,6 +232,16 @@ await hce.setPreferredService(true);   // while your app is in the foreground
 
 AIDs are registered at run time, so the set can change without a release.
 
+**`registerAids` changes persistent device state.** The emulation service ships disabled; a
+successful call enables it and stores the AID group with the Android framework, and both
+survive the process being killed, a reboot and an app update. The device answers readers for
+those AIDs whenever the app is installed, running or not. `unregisterAids()` is the only way
+back short of uninstalling, so pair the two — a call that fails or returns false leaves
+nothing behind, but one that succeeds and is never undone leaves the app enrolled forever.
+
+Pick your own AID. `F0010203040506` above is a sample: two apps built from it on one device
+claim the same identifier, and the second registration is refused.
+
 **This release bridges APDUs only while the Flutter engine is alive.** A tap with the app
 fully stopped is answered with `6D00` rather than queued. Emulating a card while the app is
 closed needs a background engine, which is not in 3.0.0.
@@ -309,9 +326,10 @@ an NFC radio.
 | `onDiscovered` had no Android error channel | `onError` fires on both platforms |
 
 New in 3.0.0 with no 2.2.0 equivalent: the NDEF wire codec and typed record parsing, smart
-posters, background tag reading, host card emulation, Apple VAS, `restartPolling`,
-`setAlertMessage`, raw `enableReaderMode`, foreground dispatch, configurable presence-check
-delay, and typed Android error codes.
+posters, background tag reading, host card emulation, Apple VAS,
+`NfcUtilIos.tagSessionRestartPolling`, `tagSessionSetAlertMessage` and
+`vasSessionSetAlertMessage`, raw `NfcUtilAndroid.enableReaderMode`, foreground dispatch,
+configurable presence-check delay, and typed Android error codes.
 
 ## License
 

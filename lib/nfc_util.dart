@@ -35,6 +35,7 @@ export 'src/common.dart'
         NfcAdapterState,
         NfcAndroidErrorCode,
         NfcAvailability,
+        NfcErrorCodes,
         NfcError,
         NfcErrorSource,
         NfcPollingOption,
