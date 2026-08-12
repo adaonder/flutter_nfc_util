@@ -63,8 +63,11 @@ internal object TagMapper {
             },
             nfcV = NfcV.get(tag)?.let {
                 NfcVPigeon(
-                    dsfId = it.dsfId.toLong(),
-                    responseFlags = it.responseFlags.toLong(),
+                    // Masked, not just widened: android.nfc.tech.NfcV reports these as signed
+                    // bytes, so a DSFID of 0xA5 would otherwise reach Dart as -91 while iOS
+                    // reports 165 for the same physical tag.
+                    dsfId = it.dsfId.toLong() and 0xFF,
+                    responseFlags = it.responseFlags.toLong() and 0xFF,
                     maxTransceiveLength = it.maxTransceiveLength.toLong(),
                 )
             },

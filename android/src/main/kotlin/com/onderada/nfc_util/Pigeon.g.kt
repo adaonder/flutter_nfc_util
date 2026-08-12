@@ -257,6 +257,8 @@ enum class ReaderFlagPigeon(val raw: Int) {
  *
  * Collapsing the technology into a parameter is what lets one `transceive` replace the
  * seven the 2.x channel had, and one `getMaxTransceiveLength` replace seven more.
+ * Only the technologies that answer a raw exchange. NDEF and NdefFormatable are addressed
+ * by their own methods, which take no technology.
  */
 enum class AndroidTechPigeon(val raw: Int) {
   NFC_A(0),
@@ -265,9 +267,7 @@ enum class AndroidTechPigeon(val raw: Int) {
   NFC_V(3),
   ISO_DEP(4),
   MIFARE_CLASSIC(5),
-  MIFARE_ULTRALIGHT(6),
-  NDEF(7),
-  NDEF_FORMATABLE(8);
+  MIFARE_ULTRALIGHT(6);
 
   companion object {
     fun ofRaw(raw: Int): AndroidTechPigeon? {
@@ -1341,7 +1341,7 @@ data class MiFarePigeon (
  * Every technology field is null when the tag does not support it, which is what the
  * `X.from(tag)` constructors test. [id] is hoisted here because on Android every
  * `android.nfc.tech` class reports the same `Tag.getId()`, and on iOS every tag protocol
- * carries one identifier; 2.x repeated it on all thirteen technology classes.
+ * carries one identifier; 2.x repeated it on twelve of its thirteen technology classes.
  *
  * Generated class from Pigeon that represents data sent in messages.
  */

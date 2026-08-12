@@ -134,66 +134,96 @@ class NfcCallbacks implements NfcFlutterApi {
     backgroundNdefHandler?.call(message);
   }
 
-  /// Arms the reader-session handlers, returning a function that puts back whatever was
-  /// there before.
-  ///
-  /// A start the platform refuses must not leave the session that is *still running* deaf.
-  /// Both platforms now reject a second `startSession` outright, and without this the guard
-  /// would be worse than the silent replacement it replaced: the old session would keep the
-  /// radio and keep delivering, while its callbacks had been overwritten and then cleared.
+  // Arms are a stack rather than a saved-and-restored pair of values.
+  //
+  // A start the platform refuses must not leave the session that is *still running* deaf:
+  // both platforms reject a second `startSession` outright, and clearing the slots there
+  // would be worse than the silent replacement that guard replaced. Capturing the previous
+  // values and writing them back is not enough, though, because two starts can be in flight
+  // at once -- the write-back then either clobbers a session that succeeded in between or
+  // resurrects one that never began. Removing an arm by identity, wherever it sits in the
+  // stack, and re-applying whatever is left on top, is correct for both orders.
+
+  final List<_SessionArm> _sessionArms = [];
+  final List<_VasArm> _vasArms = [];
+
+  /// Arms the reader-session handlers, returning a function that disarms exactly this set.
   void Function() armSession({
     Future<void> Function(NfcTag tag)? tag,
     Future<void> Function(NfcError error)? error,
     void Function()? active,
   }) {
-    final previousTag = tagHandler;
-    final previousError = errorHandler;
-    final previousActive = sessionActiveHandler;
-
-    tagHandler = tag;
-    errorHandler = error;
-    sessionActiveHandler = active;
+    final arm = _SessionArm(tag, error, active);
+    _sessionArms.add(arm);
+    _applyTopSessionArm();
 
     return () {
-      tagHandler = previousTag;
-      errorHandler = previousError;
-      sessionActiveHandler = previousActive;
+      // Identity removal: this arm may no longer be on top, and may already be gone because
+      // `clearSession` emptied the stack. Both are fine.
+      if (!_sessionArms.remove(arm)) return;
+      _applyTopSessionArm();
     };
   }
 
-  /// Arms the VAS handlers, returning a function that puts back whatever was there before.
+  /// Arms the VAS handlers, returning a function that disarms exactly this set.
   void Function() armVasSession({
     void Function(List<VasResponsePigeon> responses)? response,
     Future<void> Function(NfcError error)? error,
     void Function()? active,
   }) {
-    final previousResponse = vasHandler;
-    final previousError = vasErrorHandler;
-    final previousActive = vasActiveHandler;
-
-    vasHandler = response;
-    vasErrorHandler = error;
-    vasActiveHandler = active;
+    final arm = _VasArm(response, error, active);
+    _vasArms.add(arm);
+    _applyTopVasArm();
 
     return () {
-      vasHandler = previousResponse;
-      vasErrorHandler = previousError;
-      vasActiveHandler = previousActive;
+      if (!_vasArms.remove(arm)) return;
+      _applyTopVasArm();
     };
+  }
+
+  void _applyTopSessionArm() {
+    final top = _sessionArms.isEmpty ? null : _sessionArms.last;
+    tagHandler = top?.tag;
+    errorHandler = top?.error;
+    sessionActiveHandler = top?.active;
+  }
+
+  void _applyTopVasArm() {
+    final top = _vasArms.isEmpty ? null : _vasArms.last;
+    vasHandler = top?.response;
+    vasErrorHandler = top?.error;
+    vasActiveHandler = top?.active;
   }
 
   /// Clears what a reader session owns, leaving the VAS slots and the long-lived handlers --
   /// adapter state, host card emulation, intent delivery -- registered.
+  ///
+  /// Empties the stack, so a start still in flight cannot resurrect a session the app has
+  /// already stopped.
   void clearSession() {
-    tagHandler = null;
-    errorHandler = null;
-    sessionActiveHandler = null;
+    _sessionArms.clear();
+    _applyTopSessionArm();
   }
 
   /// Clears what a VAS session owns.
   void clearVasSession() {
-    vasHandler = null;
-    vasErrorHandler = null;
-    vasActiveHandler = null;
+    _vasArms.clear();
+    _applyTopVasArm();
   }
+}
+
+class _SessionArm {
+  _SessionArm(this.tag, this.error, this.active);
+
+  final Future<void> Function(NfcTag tag)? tag;
+  final Future<void> Function(NfcError error)? error;
+  final void Function()? active;
+}
+
+class _VasArm {
+  _VasArm(this.response, this.error, this.active);
+
+  final void Function(List<VasResponsePigeon> responses)? response;
+  final Future<void> Function(NfcError error)? error;
+  final void Function()? active;
 }

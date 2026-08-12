@@ -257,6 +257,11 @@ class NfcUtilPlugin :
     ) {
         val adapter = adapter ?: return callback(failure("unavailable", "This device has no NFC adapter."))
         val activity = activity ?: return callback(failure("no_activity", "No activity is attached."))
+        // Reader mode on a disabled adapter starts without error and then never discovers
+        // anything, which is indistinguishable to the app from a tag never being presented.
+        if (!adapter.isEnabled) {
+            return callback(failure(AndroidErrorCodePigeon.ADAPTER_DISABLED, "NFC is switched off in system settings."))
+        }
         if (sessionActive) {
             return callback(failure("session_already_exists", "A session is already running. Stop it first."))
         }
@@ -436,37 +441,46 @@ class NfcUtilPlugin :
             AndroidTechPigeon.MIFARE_CLASSIC -> withTech(handle, MifareClassic::get, callback) { it.transceive(data) }
             AndroidTechPigeon.MIFARE_ULTRALIGHT ->
                 withTech(handle, MifareUltralight::get, callback) { it.transceive(data) }
-            AndroidTechPigeon.NDEF, AndroidTechPigeon.NDEF_FORMATABLE ->
-                callback(failure("unsupported_tech", "${tech.name} does not support transceive."))
         }
     }
 
+    /**
+     * Both accessors read the technology's static description rather than talking to the
+     * tag, so they run without a connection.
+     *
+     * Connecting here would be actively harmful, not merely wasteful: `connectTech` closes
+     * whatever technology is currently connected when the class differs, and
+     * `TagTechnology.close()` performs an RF reselect that wipes a MIFARE sector
+     * authentication and any timeout already set. Asking a tag how long its packets may be,
+     * between authenticating a sector and reading it, would silently undo the
+     * authentication.
+     */
     override fun getMaxTransceiveLength(handle: String, tech: AndroidTechPigeon, callback: (Result<Long>) -> Unit) {
         when (tech) {
-            AndroidTechPigeon.NFC_A -> withTech(handle, NfcA::get, callback) { it.maxTransceiveLength.toLong() }
-            AndroidTechPigeon.NFC_B -> withTech(handle, NfcB::get, callback) { it.maxTransceiveLength.toLong() }
-            AndroidTechPigeon.NFC_F -> withTech(handle, NfcF::get, callback) { it.maxTransceiveLength.toLong() }
-            AndroidTechPigeon.NFC_V -> withTech(handle, NfcV::get, callback) { it.maxTransceiveLength.toLong() }
-            AndroidTechPigeon.ISO_DEP -> withTech(handle, IsoDep::get, callback) { it.maxTransceiveLength.toLong() }
+            AndroidTechPigeon.NFC_A -> readOnly(handle, NfcA::get, callback) { it.maxTransceiveLength.toLong() }
+            AndroidTechPigeon.NFC_B -> readOnly(handle, NfcB::get, callback) { it.maxTransceiveLength.toLong() }
+            AndroidTechPigeon.NFC_F -> readOnly(handle, NfcF::get, callback) { it.maxTransceiveLength.toLong() }
+            AndroidTechPigeon.NFC_V -> readOnly(handle, NfcV::get, callback) { it.maxTransceiveLength.toLong() }
+            AndroidTechPigeon.ISO_DEP -> readOnly(handle, IsoDep::get, callback) { it.maxTransceiveLength.toLong() }
             AndroidTechPigeon.MIFARE_CLASSIC ->
-                withTech(handle, MifareClassic::get, callback) { it.maxTransceiveLength.toLong() }
+                readOnly(handle, MifareClassic::get, callback) { it.maxTransceiveLength.toLong() }
             AndroidTechPigeon.MIFARE_ULTRALIGHT ->
-                withTech(handle, MifareUltralight::get, callback) { it.maxTransceiveLength.toLong() }
-            AndroidTechPigeon.NDEF, AndroidTechPigeon.NDEF_FORMATABLE ->
-                callback(failure("unsupported_tech", "${tech.name} reports no transceive length."))
+                readOnly(handle, MifareUltralight::get, callback) { it.maxTransceiveLength.toLong() }
         }
     }
 
     override fun getTimeout(handle: String, tech: AndroidTechPigeon, callback: (Result<Long>) -> Unit) {
         // android.nfc.tech offers no timeout accessor for NfcB or NfcV, hence the gaps.
         when (tech) {
-            AndroidTechPigeon.NFC_A -> withTech(handle, NfcA::get, callback) { it.timeout.toLong() }
-            AndroidTechPigeon.NFC_F -> withTech(handle, NfcF::get, callback) { it.timeout.toLong() }
-            AndroidTechPigeon.ISO_DEP -> withTech(handle, IsoDep::get, callback) { it.timeout.toLong() }
-            AndroidTechPigeon.MIFARE_CLASSIC -> withTech(handle, MifareClassic::get, callback) { it.timeout.toLong() }
+            AndroidTechPigeon.NFC_A -> readOnly(handle, NfcA::get, callback) { it.timeout.toLong() }
+            AndroidTechPigeon.NFC_F -> readOnly(handle, NfcF::get, callback) { it.timeout.toLong() }
+            AndroidTechPigeon.ISO_DEP -> readOnly(handle, IsoDep::get, callback) { it.timeout.toLong() }
+            AndroidTechPigeon.MIFARE_CLASSIC -> readOnly(handle, MifareClassic::get, callback) { it.timeout.toLong() }
             AndroidTechPigeon.MIFARE_ULTRALIGHT ->
-                withTech(handle, MifareUltralight::get, callback) { it.timeout.toLong() }
-            else -> callback(failure("unsupported_tech", "${tech.name} has no timeout accessor on Android."))
+                readOnly(handle, MifareUltralight::get, callback) { it.timeout.toLong() }
+            else -> callback(
+                failure(AndroidErrorCodePigeon.UNSUPPORTED_TECH, "${tech.name} has no timeout accessor on Android."),
+            )
         }
     }
 
@@ -479,7 +493,9 @@ class NfcUtilPlugin :
             AndroidTechPigeon.MIFARE_CLASSIC -> withTech(handle, MifareClassic::get, callback) { it.timeout = millis }
             AndroidTechPigeon.MIFARE_ULTRALIGHT ->
                 withTech(handle, MifareUltralight::get, callback) { it.timeout = millis }
-            else -> callback(failure("unsupported_tech", "${tech.name} has no timeout accessor on Android."))
+            else -> callback(
+                failure(AndroidErrorCodePigeon.UNSUPPORTED_TECH, "${tech.name} has no timeout accessor on Android."),
+            )
         }
     }
 
@@ -551,8 +567,9 @@ class NfcUtilPlugin :
         geometry(handle) { it.getBlockCountInSector(sectorIndex.toInt()).toLong() }
 
     private fun geometry(handle: String, body: (MifareClassic) -> Long): Long {
-        val tag = tags[handle] ?: throw FlutterErrorOf("invalid_parameter", "Tag is not found.")
-        val tech = MifareClassic.get(tag) ?: throw FlutterErrorOf("unsupported_tech", "Tag is not a Mifare Classic.")
+        val tag = tags[handle] ?: throw FlutterErrorOf(wireName(AndroidErrorCodePigeon.INVALID_PARAMETER), "Tag is not found.")
+        val tech = MifareClassic.get(tag)
+            ?: throw FlutterErrorOf(wireName(AndroidErrorCodePigeon.UNSUPPORTED_TECH), "Tag is not a Mifare Classic.")
         return body(tech)
     }
 
@@ -649,6 +666,32 @@ class NfcUtilPlugin :
     // ---------------------------------------------------------------------------------
 
     /**
+     * Resolves the handle and reads a value off the technology's static description, without
+     * opening a connection.
+     *
+     * Synchronous on purpose: there is no I/O to keep off the platform thread, and routing
+     * it through [ioExecutor] would only make it queue behind a tag exchange.
+     */
+    private fun <T : TagTechnology, R> readOnly(
+        handle: String,
+        techFactory: (Tag) -> T?,
+        callback: (Result<R>) -> Unit,
+        body: (T) -> R,
+    ) {
+        val tag = tags[handle]
+            ?: return callback(failure(AndroidErrorCodePigeon.INVALID_PARAMETER, "Tag is not found."))
+        val tech = techFactory(tag)
+            ?: return callback(
+                failure(AndroidErrorCodePigeon.UNSUPPORTED_TECH, "Tag does not answer to the requested technology."),
+            )
+
+        callback(
+            runCatching { body(tech) }
+                .fold({ Result.success(it) }, { Result.failure(FlutterErrorOf(wireName(TagMapper.errorCode(it)), it.message ?: "")) }),
+        )
+    }
+
+    /**
      * Resolves the handle, connects the requested technology on [ioExecutor], and posts the
      * outcome back to the platform thread.
      */
@@ -658,7 +701,8 @@ class NfcUtilPlugin :
         callback: (Result<R>) -> Unit,
         body: (T) -> R,
     ) {
-        val tag = tags[handle] ?: return callback(failure("invalid_parameter", "Tag is not found."))
+        val tag = tags[handle]
+            ?: return callback(failure(AndroidErrorCodePigeon.INVALID_PARAMETER, "Tag is not found."))
 
         ioExecutor.execute {
             val tech = try {
@@ -666,14 +710,14 @@ class NfcUtilPlugin :
             } catch (e: Throwable) {
                 Log.w(TAG, "connect failed", e)
                 mainHandler.post {
-                    callback(failure(TagMapper.errorCode(e).name.lowercase(), "connect: ${e.javaClass.simpleName}: ${e.message}"))
+                    callback(failure(TagMapper.errorCode(e), "connect: ${e.javaClass.simpleName}: ${e.message}"))
                 }
                 return@execute
             }
 
             if (tech == null) {
                 mainHandler.post {
-                    callback(failure("unsupported_tech", "Tag does not answer to the requested technology."))
+                    callback(failure(AndroidErrorCodePigeon.UNSUPPORTED_TECH, "Tag does not answer to the requested technology."))
                 }
                 return@execute
             }
@@ -684,7 +728,7 @@ class NfcUtilPlugin :
             } catch (e: Throwable) {
                 Log.w(TAG, "tag operation failed", e)
                 mainHandler.post {
-                    callback(failure(TagMapper.errorCode(e).name.lowercase(), "${e.javaClass.simpleName}: ${e.message}"))
+                    callback(failure(TagMapper.errorCode(e), "${e.javaClass.simpleName}: ${e.message}"))
                 }
             }
         }
@@ -731,6 +775,9 @@ class NfcUtilPlugin :
 
     private fun <T> failure(code: String, message: String): Result<T> = Result.failure(FlutterErrorOf(code, message))
 
+    private fun <T> failure(code: AndroidErrorCodePigeon, message: String): Result<T> =
+        Result.failure(FlutterErrorOf(wireName(code), message))
+
     private companion object {
         const val TAG = "NfcUtilPlugin"
     }
@@ -738,3 +785,21 @@ class NfcUtilPlugin :
 
 /** A [FlutterError] with the fields filled in, since the generated constructor is positional. */
 private fun FlutterErrorOf(code: String, message: String) = FlutterError(code, message, null)
+
+/**
+ * The code a PlatformException carries for a typed failure.
+ *
+ * Spelled exactly like the Dart enum value so `NfcAndroidErrorCode.values.byName(e.code)`
+ * resolves it. The Kotlin enum is SCREAMING_CASE and the Dart one is camelCase, so this
+ * cannot be `.name`, and lowercasing produced a third spelling that matched neither.
+ */
+private fun wireName(code: AndroidErrorCodePigeon): String = when (code) {
+    AndroidErrorCodePigeon.TAG_LOST -> "tagLost"
+    AndroidErrorCodePigeon.IO -> "io"
+    AndroidErrorCodePigeon.SECURITY -> "security"
+    AndroidErrorCodePigeon.UNSUPPORTED_TECH -> "unsupportedTech"
+    AndroidErrorCodePigeon.NOT_CONNECTED -> "notConnected"
+    AndroidErrorCodePigeon.ADAPTER_DISABLED -> "adapterDisabled"
+    AndroidErrorCodePigeon.INVALID_PARAMETER -> "invalidParameter"
+    AndroidErrorCodePigeon.UNKNOWN -> "unknown"
+}

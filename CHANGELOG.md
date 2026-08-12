@@ -42,8 +42,8 @@ See the README for the complete 2.2.0 mapping table.
 * **`isAvailable()` is removed**, as 2.1.0 said it would be. Use `checkAvailability()`.
 
 * `NfcTag` no longer carries a raw map. The tag identifier is `tag.id` and the Android
-  technology list is `tag.techList`; 2.x repeated the identifier on all thirteen technology
-  classes.
+  technology list is `tag.techList`; 2.x repeated the identifier on twelve of its thirteen
+  technology classes.
 
 * Timeouts are `Duration` rather than `int` milliseconds, and `MifareClassic.type` /
   `MifareUltralight.type` are enums rather than raw ints.
@@ -119,33 +119,10 @@ See the README for the complete 2.2.0 mapping table.
 
 * `Ndef.read()` no longer reports a zero-length message as a failure on iOS.
 
-* **iOS background NDEF reading works at all.** The app-delegate hook was declared with
-  `UIApplicationDelegate`'s restoration-handler type rather than the one Flutter's
-  `FlutterApplicationLifeCycleDelegate` declares. Flutter dispatches to plugins through
-  `respondsToSelector:`, so the near-miss signature compiled cleanly and was simply never
-  called: `onNdefFromBackground` never fired and `takeInitialNdefMessage()` always returned
-  null. The launch case is now told apart explicitly, the way Android reads its launching
-  intent, rather than inferred from whether the engine exists -- it always does by then.
-
-* **A refused `startSession` no longer silences the session that is still running.** The
-  handlers are put back rather than cleared, so the guard that makes a double start an error
-  cannot leave the live session holding the radio while the app is deaf to it. Same fix in
-  `NfcUtilAndroid.enableReaderMode` and `NfcUtilIos.vasSessionBegin`.
-
-* **A reader session and a VAS session no longer share callback slots.** iOS runs them as
-  two independent objects, so stopping one used to unregister the other's `onError` and
-  `onBecameActive` while it was still up -- leaving a VAS sheet that still delivered passes
-  but could never report the user cancelling it.
-
 * **iOS no longer delivers a tag for a session it no longer owns.** The NDEF probe is two
   round trips and CoreNFC still runs a pending completion after the session dies, so a tag
   could be registered in a map `stopSession` had just emptied and handed to an app that had
   already been told the session was over.
-
-* **Host card emulation is no longer taken over by an unrelated Flutter engine.** Every
-  engine registers every plugin, including the background engines other plugins spin up for
-  push messages and scheduled work; the bridge is now claimed when the app registers AIDs,
-  not when a plugin attaches.
 
 * **iOS no longer loses a newly-started session to the old one's invalidation.**
   `invalidate()` returns long before CoreNFC calls back, so a `stopSession` immediately
@@ -155,35 +132,65 @@ See the README for the complete 2.2.0 mapping table.
   slip past the guard into a second concurrent session. An invalidation for a session the
   plugin no longer owns is now ignored.
 
+* **A refused `startSession` no longer silences the session that is still running.** 2.2.0
+  cleared the callbacks whenever a start threw, so a start refused while a session was live
+  left that session holding the radio and delivering to nobody. The handlers are a stack
+  now, so a refusal restores whatever was armed before it -- correct even with two starts in
+  flight, where saving and writing back a single previous value is not.
+
+* **An out-of-range block or APDU number no longer kills the app on iOS.** 2.2.0 force-cast
+  the argument to `UInt8`; the rewrite's `UInt8(...)` trapped. Neither is reachable now: the
+  thirteen narrowing sites report `invalid_parameter` instead. This is not a corner case --
+  `Iso15693.getSystemInfo()` reports `totalBlocks`, a 2048-block tag is ordinary, and the
+  obvious loop over every block died at block 256.
+
+* **`NfcV.dsfId` and `responseFlags` are unsigned.** `android.nfc.tech.NfcV` reports them as
+  signed bytes and 2.2.0 passed them straight through, so a DSFID of `0xA5` arrived as -91 --
+  while iOS reported 165 for the same physical tag.
+
+* **`getMaxTransceiveLength` and `getTimeout` no longer disturb the connection.** Both read
+  the technology's static description, but 2.2.0 routed them through the connecting path,
+  and reconnecting reselects the tag. Asking a tag how long its packets may be, between
+  authenticating a Mifare Classic sector and reading it, silently undid the authentication.
+
+* **A type or identifier longer than 255 bytes is refused rather than truncated.** Both are
+  one-byte length fields on the wire; 2.2.0 wrote the low byte and produced a message that
+  neither this package nor the platform could read back.
+
+* **Reader mode on a switched-off adapter fails instead of starting.** It used to begin
+  without error and then discover nothing, which is indistinguishable from a tag never being
+  presented. Reported as `adapterDisabled`.
+
 * **iOS no longer sends channel replies from CoreNFC's queue.** Every tag operation
   completes on the session's own queue, but replies belong to the platform thread. They now
   hop back. A reply already raised on the platform thread stays synchronous, so nothing that
   was correctly ordered is reordered.
 
-* `NdefMessage.fromBytes` rejects a standalone `UNCHANGED` record rather than returning one
-  its own encoder refuses to write.
-
 ### Changed
 
 * **The platform channel is generated by Pigeon.** This removes `lib/src/translator.dart`,
-  `android/.../Translator.kt` and `ios/.../Translator.swift` -- 837 lines of hand-written
+  `android/.../Translator.kt` and `ios/.../Translator.swift` -- 813 lines of hand-written
   codec that had to be kept in step by hand across three languages. Enum bridging is an
   exhaustive `switch` on both sides, so a value added on one side and not the other fails
   the build instead of throwing on a user's device.
 
-* **The Android channel went from 49 methods to about 20.** The technology is a parameter
-  now, so one `transceive` replaces seven, and one `getMaxTransceiveLength` replaces seven
-  more.
+* **Twenty-four Android channel methods collapsed into four.** The technology is a
+  parameter now, so seven `transceive` entry points became one, and likewise seven
+  `getMaxTransceiveLength` and five each of `getTimeout` and `setTimeout`. Android answered
+  49 channel methods in 2.2.0 and answers 37 now, ten of which have no 2.2.0 counterpart:
+  five for card emulation, three for background reading, and the raw `enableReaderMode`
+  pair.
 
 * The example app was rewritten and covers every subsystem, including card emulation,
   background reading and Wallet passes.
 
-* The podspec version was out of step with the package (it still said 2.2.0).
-
 ### Tests
 
-121 in total, up from 71: 92 Dart (was 52), 17 Swift (was 14), 11 Kotlin (was 5), plus the
-example's widget test.
+132 in total, up from 57: 101 Dart (was 51), 19 Swift (2.2.0 shipped only the generated
+template, which did not compile), 11 Kotlin (was 5), plus the example's widget test on both
+sides. Among them: the handler stack over all three start interleavings, byte narrowing at
+its boundaries, the type and identifier length refusal, and a smart poster whose real
+destination a leading absolute-URI record used to shadow.
 
 The Dart suite now covers the session lifecycle, tag resolution and error mapping, by
 swapping a fake in for the generated host API -- none of which was reachable in 2.x. The NDEF

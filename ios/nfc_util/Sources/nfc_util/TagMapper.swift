@@ -65,12 +65,12 @@ enum TagMapper {
   /// `sessionEnded` defaults to true because every `didInvalidateWithError` is exactly that:
   /// CoreNFC has no notion of a session surviving an error. The one caller that passes false
   /// is the connect failure inside `didDetect`, where the session stays up and keeps polling.
-  static func error(_ error: Error, sessionEnded: Bool = true, message: String? = nil) -> NfcErrorPigeon {
+  static func error(_ error: Error, sessionEnded: Bool = true) -> NfcErrorPigeon {
     NfcErrorPigeon(
       source: .ios,
       iosCode: readerErrorCode(error),
       androidCode: nil,
-      message: message ?? error.localizedDescription,
+      message: error.localizedDescription,
       sessionEnded: sessionEnded
     )
   }

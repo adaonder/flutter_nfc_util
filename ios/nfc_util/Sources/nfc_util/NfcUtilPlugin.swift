@@ -82,6 +82,33 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
     .failure(PigeonError(code: "unavailable", message: message, details: nil))
   }
 
+  private static func outOfRange<T>(_ name: String, _ value: Int64) -> Result<T, Error> {
+    .failure(PigeonError(
+      code: "invalid_parameter",
+      message: "\(name) must be 0...255, got \(value).",
+      details: nil
+    ))
+  }
+
+  /// Narrows a wire integer to the byte the CoreNFC API takes, reporting instead of trapping.
+  ///
+  /// Pigeon types every one of these as a 64-bit int, and `UInt8(x)` traps on anything
+  /// outside 0...255 -- which is not hypothetical: `Iso15693.getSystemInfo()` reports
+  /// `totalBlocks` as a plain int, and a 2048-block tag is ordinary, so the obvious loop over
+  /// every block kills the app at block 256. Checked before the tag is resolved, so an
+  /// out-of-range argument reads as itself rather than hiding behind "Tag is not found."
+  private static func byte<T>(
+    _ value: Int64,
+    _ name: String,
+    _ completion: @escaping (Result<T, Error>) -> Void
+  ) -> UInt8? {
+    guard let narrowed = UInt8(exactly: value) else {
+      TagMapper.onMain { completion(outOfRange(name, value)) }
+      return nil
+    }
+    return narrowed
+  }
+
   /// Resolves a handle and hands the tag to `body`, or completes with "not found".
   private func withTag<Tag, Value>(
     _ handle: String,
@@ -565,8 +592,9 @@ extension NfcUtilPlugin {
     blockNumber: Int64,
     completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void
   ) {
+    guard let block = Self.byte(blockNumber, "blockNumber", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
-      tag.readSingleBlock(requestFlags: TagMapper.requestFlags(flags), blockNumber: UInt8(blockNumber)) { data, error in
+      tag.readSingleBlock(requestFlags: TagMapper.requestFlags(flags), blockNumber: block) { data, error in
         Self.finish(data, error, completion) { FlutterStandardTypedData(bytes: $0) }
       }
     }
@@ -579,10 +607,11 @@ extension NfcUtilPlugin {
     dataBlock: FlutterStandardTypedData,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    guard let block = Self.byte(blockNumber, "blockNumber", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.writeSingleBlock(
         requestFlags: TagMapper.requestFlags(flags),
-        blockNumber: UInt8(blockNumber),
+        blockNumber: block,
         dataBlock: dataBlock.data
       ) { error in Self.finishVoid(error, completion) }
     }
@@ -594,8 +623,9 @@ extension NfcUtilPlugin {
     blockNumber: Int64,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    guard let block = Self.byte(blockNumber, "blockNumber", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
-      tag.lockBlock(requestFlags: TagMapper.requestFlags(flags), blockNumber: UInt8(blockNumber)) { error in
+      tag.lockBlock(requestFlags: TagMapper.requestFlags(flags), blockNumber: block) { error in
         Self.finishVoid(error, completion)
       }
     }
@@ -658,8 +688,9 @@ extension NfcUtilPlugin {
     afi: Int64,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    guard let value = Self.byte(afi, "afi", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
-      tag.writeAFI(requestFlags: TagMapper.requestFlags(flags), afi: UInt8(afi)) { error in
+      tag.writeAFI(requestFlags: TagMapper.requestFlags(flags), afi: value) { error in
         Self.finishVoid(error, completion)
       }
     }
@@ -681,8 +712,9 @@ extension NfcUtilPlugin {
     dsfId: Int64,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    guard let value = Self.byte(dsfId, "dsfId", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
-      tag.writeDSFID(requestFlags: TagMapper.requestFlags(flags), dsfid: UInt8(dsfId)) { error in
+      tag.writeDSFID(requestFlags: TagMapper.requestFlags(flags), dsfid: value) { error in
         Self.finishVoid(error, completion)
       }
     }
@@ -846,12 +878,17 @@ extension NfcUtilPlugin {
     expectedResponseLength: Int64,
     completion: @escaping (Result<Iso7816ResponseApduPigeon, Error>) -> Void
   ) {
+    guard let cla = Self.byte(instructionClass, "instructionClass", completion),
+          let ins = Self.byte(instructionCode, "instructionCode", completion),
+          let p1 = Self.byte(p1Parameter, "p1Parameter", completion),
+          let p2 = Self.byte(p2Parameter, "p2Parameter", completion)
+    else { return }
     withTag(handle, as: NFCISO7816Tag.self, completion) { tag in
       let apdu = NFCISO7816APDU(
-        instructionClass: UInt8(instructionClass),
-        instructionCode: UInt8(instructionCode),
-        p1Parameter: UInt8(p1Parameter),
-        p2Parameter: UInt8(p2Parameter),
+        instructionClass: cla,
+        instructionCode: ins,
+        p1Parameter: p1,
+        p2Parameter: p2,
         data: data.data,
         expectedResponseLength: Int(expectedResponseLength)
       )
@@ -905,12 +942,17 @@ extension NfcUtilPlugin {
     expectedResponseLength: Int64,
     completion: @escaping (Result<Iso7816ResponseApduPigeon, Error>) -> Void
   ) {
+    guard let cla = Self.byte(instructionClass, "instructionClass", completion),
+          let ins = Self.byte(instructionCode, "instructionCode", completion),
+          let p1 = Self.byte(p1Parameter, "p1Parameter", completion),
+          let p2 = Self.byte(p2Parameter, "p2Parameter", completion)
+    else { return }
     withTag(handle, as: NFCMiFareTag.self, completion) { tag in
       let apdu = NFCISO7816APDU(
-        instructionClass: UInt8(instructionClass),
-        instructionCode: UInt8(instructionCode),
-        p1Parameter: UInt8(p1Parameter),
-        p2Parameter: UInt8(p2Parameter),
+        instructionClass: cla,
+        instructionCode: ins,
+        p1Parameter: p1,
+        p2Parameter: p2,
         data: data.data,
         expectedResponseLength: Int(expectedResponseLength)
       )
@@ -1098,6 +1140,13 @@ extension NfcUtilPlugin {
     continue userActivity: NSUserActivity,
     restorationHandler: @escaping ([Any]) -> Void
   ) -> Bool {
+    // Consumed here, before the payload is even looked at: the launch hand-off has happened
+    // whether or not this particular activity carries NDEF. An app launched by a universal
+    // link would otherwise leave the flag set and swallow the next background read -- which
+    // is a real tap, arriving while the app is on screen -- into the pending slot.
+    let wasLaunch = launchedByUserActivity
+    launchedByUserActivity = false
+
     // `ndefMessagePayload` is non-optional and comes back with no records when the activity
     // is an ordinary universal link rather than a background tag read.
     let payload = userActivity.ndefMessagePayload
@@ -1105,10 +1154,9 @@ extension NfcUtilPlugin {
 
     let wire = TagMapper.messageToWire(payload)
 
-    if launchedByUserActivity {
+    if wasLaunch {
       // Held for takeInitialNdefMessage rather than pushed at a Dart handler that main() has
       // not had the chance to register yet. Mirrors takeInitialTag on Android.
-      launchedByUserActivity = false
       pendingInitialNdefMessage = wire
     } else {
       TagMapper.onMain { [weak self] in self?.flutterApi?.onNdefFromBackground(message: wire) { _ in } }

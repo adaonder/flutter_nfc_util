@@ -225,6 +225,8 @@ enum ReaderFlagPigeon: Int, CaseIterable {
 ///
 /// Collapsing the technology into a parameter is what lets one `transceive` replace the
 /// seven the 2.x channel had, and one `getMaxTransceiveLength` replace seven more.
+/// Only the technologies that answer a raw exchange. NDEF and NdefFormatable are addressed
+/// by their own methods, which take no technology.
 enum AndroidTechPigeon: Int, CaseIterable {
   case nfcA = 0
   case nfcB = 1
@@ -233,8 +235,6 @@ enum AndroidTechPigeon: Int, CaseIterable {
   case isoDep = 4
   case mifareClassic = 5
   case mifareUltralight = 6
-  case ndef = 7
-  case ndefFormatable = 8
 }
 
 /// NDEF Type-Name-Format, as defined by the NFC Forum. Ordinals match the on-tag values
@@ -1212,7 +1212,7 @@ struct MiFarePigeon: Hashable, CustomStringConvertible {
 /// Every technology field is null when the tag does not support it, which is what the
 /// `X.from(tag)` constructors test. [id] is hoisted here because on Android every
 /// `android.nfc.tech` class reports the same `Tag.getId()`, and on iOS every tag protocol
-/// carries one identifier; 2.x repeated it on all thirteen technology classes.
+/// carries one identifier; 2.x repeated it on twelve of its thirteen technology classes.
 ///
 /// Generated class from Pigeon that represents data sent in messages.
 struct TagPigeon: Hashable, CustomStringConvertible {

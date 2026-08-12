@@ -140,6 +140,44 @@ void main() {
       );
     });
 
+    test('refuses a type or identifier that does not fit its one-byte length field', () {
+      // Truncating instead of refusing produced a record that encoded without complaint and
+      // that nothing -- not this parser, not the platform's -- could read back.
+      expect(
+        () => NdefRecord(
+          typeNameFormat: NdefTypeNameFormat.media,
+          type: Uint8List(256),
+          identifier: Uint8List(0),
+          payload: Uint8List(0),
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => NdefRecord(
+          typeNameFormat: NdefTypeNameFormat.media,
+          type: Uint8List(1),
+          identifier: Uint8List(256),
+          payload: Uint8List(0),
+        ),
+        throwsArgumentError,
+      );
+      // 255 is the ceiling, not the limit, and still round trips.
+      final atTheLimit = NdefMessage([
+        NdefRecord(
+          typeNameFormat: NdefTypeNameFormat.media,
+          type: Uint8List(255),
+          identifier: Uint8List(255),
+          payload: Uint8List(1),
+        ),
+      ]);
+      expect(NdefMessage.fromBytes(atTheLimit.toBytes()), atTheLimit);
+      expect(atTheLimit.byteLength, atTheLimit.toBytes().length);
+    });
+
+    test('a long MIME type is refused rather than silently truncated', () {
+      expect(() => MimeRecord.create('application/${'x' * 300}', bytes([1])), throwsArgumentError);
+    });
+
     test('decoded records do not alias the source buffer', () {
       final source = NdefMessage([TextRecord.create('x')]).toBytes();
       final decoded = NdefMessage.fromBytes(source);
@@ -247,6 +285,28 @@ void main() {
     });
   });
 
+  group('UriRecord rejects what create would never write', () {
+    test('a record carrying only the prefix byte is not a URI', () {
+      final record = NdefRecord.fromParts(
+        typeNameFormat: NdefTypeNameFormat.wellKnown,
+        type: bytes([0x55]),
+        identifier: Uint8List(0),
+        payload: bytes([0x04]),
+      );
+      expect(UriRecord.from(record), isNull);
+    });
+
+    test('a zero-length absolute URI is not a URI', () {
+      final record = NdefRecord.fromParts(
+        typeNameFormat: NdefTypeNameFormat.absoluteUri,
+        type: Uint8List(0),
+        identifier: Uint8List(0),
+        payload: Uint8List(0),
+      );
+      expect(UriRecord.from(record), isNull);
+    });
+  });
+
   group('SmartPosterRecord', () {
     test('round trips a URI, title and action', () {
       final record = SmartPosterRecord.create(
@@ -293,6 +353,48 @@ void main() {
       final decoded = NdefMessage.fromBytes(message.toBytes());
       expect(decoded.records, hasLength(3));
       expect(SmartPosterRecord.from(decoded.records[1])!.title(), 'T');
+    });
+
+    test('a leading absolute-URI record does not shadow the real destination', () {
+      // Taking whichever URI came first let a zero-length absolute-URI record discard the
+      // poster's actual target, and a non-empty one silently replace it.
+      final record = NdefRecord(
+        typeNameFormat: NdefTypeNameFormat.wellKnown,
+        type: bytes([0x53, 0x70]),
+        identifier: Uint8List(0),
+        payload: NdefMessage([
+          NdefRecord(
+            typeNameFormat: NdefTypeNameFormat.absoluteUri,
+            type: bytes(utf8.encode('https://decoy.example')),
+            identifier: Uint8List(0),
+            payload: Uint8List(0),
+          ),
+          UriRecord.create(Uri.parse('https://real.example/promo')),
+        ]).toBytes(),
+      );
+
+      expect(SmartPosterRecord.from(record)!.uri.toString(), 'https://real.example/promo');
+    });
+
+    test('an absolute-URI record still works when it is the only one', () {
+      final record = NdefRecord(
+        typeNameFormat: NdefTypeNameFormat.wellKnown,
+        type: bytes([0x53, 0x70]),
+        identifier: Uint8List(0),
+        payload: NdefMessage([
+          NdefRecord(
+            typeNameFormat: NdefTypeNameFormat.absoluteUri,
+            type: bytes(utf8.encode('https://only.example')),
+            identifier: Uint8List(0),
+            payload: Uint8List(0),
+          ),
+          TextRecord.create('Title'),
+        ]).toBytes(),
+      );
+
+      final parsed = SmartPosterRecord.from(record)!;
+      expect(parsed.uri.toString(), 'https://only.example');
+      expect(parsed.title(), 'Title');
     });
 
     test('requires the icon type and data together', () {

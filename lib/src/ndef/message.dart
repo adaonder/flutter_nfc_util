@@ -124,8 +124,10 @@ class NdefMessage {
         payloadLength = readByte();
       } else {
         final b0 = readByte(), b1 = readByte(), b2 = readByte(), b3 = readByte();
+        // Four bytes cannot exceed 2^32-1, which Dart's int holds exactly, so there is
+        // nothing to guard against here; a length longer than the buffer is caught by
+        // readBytes below.
         payloadLength = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-        if (payloadLength < 0) throw const FormatException('NDEF payload length overflows');
       }
       final idLength = hasId ? readByte() : 0;
 

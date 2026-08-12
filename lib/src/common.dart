@@ -6,8 +6,16 @@ import 'pigeon.g.dart';
 
 /// One tag, discovered by a reader session or delivered by an intent.
 ///
-/// A tag is only usable while the session that found it is still open. Reach the
-/// technology-specific operations through the `from` constructors in
+/// **A tag is addressable only inside the callback that delivered it** -- `onDiscovered`, or
+/// Android's `onTagFromIntent`. The native handle is released as soon as that callback's
+/// future completes, so do the tag I/O inside it. The callback is awaited before the
+/// platform touches the tag again, so there is no rush; but a tag stored for a later screen
+/// fails with `invalid_parameter` even though the session is still open.
+///
+/// What was copied at discovery stays readable afterwards -- [id], [techList] and
+/// `Ndef.from(tag)?.cachedMessage` -- so keeping the tag as a record of the scan is fine.
+///
+/// Reach the technology-specific operations through the `from` constructors in
 /// `package:nfc_util/android.dart` and `package:nfc_util/ios.dart`:
 ///
 /// ```dart
@@ -18,7 +26,7 @@ import 'pigeon.g.dart';
 class NfcTag {
   /// Wraps platform data.
   ///
-  /// Only an instance delivered by a session addresses a tag that is actually in the field;
+  /// Only an instance delivered by the platform addresses a tag that is actually in the field;
   /// one built here is inert, which is exactly what makes it useful for exercising the
   /// `from` constructors in tests.
   const NfcTag(this.data);

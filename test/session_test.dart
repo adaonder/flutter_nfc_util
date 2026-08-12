@@ -177,7 +177,10 @@ void main() {
     test('does not leave the callback armed when the start was refused', () async {
       host.startError = PlatformException(code: 'unavailable');
       var called = false;
-      await NfcUtil.instance.startSession(onDiscovered: (_) async => called = true).catchError((_) {});
+      await expectLater(
+        NfcUtil.instance.startSession(onDiscovered: (_) async => called = true),
+        throwsA(isA<PlatformException>()),
+      );
 
       await deliverTag(plainTag('ghost'));
       expect(called, isFalse, reason: 'a session that never began must not deliver tags');
@@ -201,8 +204,8 @@ void main() {
 
       await deliverTag(plainTag('handle-2'));
 
-      // 2.x leaked the handle here, which kept the tag in the platform's map for the life
-      // of the process.
+      // A callback that throws must still release the handle, or the tag stays in the
+      // platform's map for the life of the process.
       expect(host.disposed, ['handle-2']);
     });
 
@@ -378,10 +381,65 @@ void main() {
     test('still disarms when there was no session to begin with', () async {
       host.startError = PlatformException(code: 'unavailable');
       var called = false;
-      await NfcUtil.instance.startSession(onDiscovered: (_) async => called = true).catchError((_) {});
+      await expectLater(
+        NfcUtil.instance.startSession(onDiscovered: (_) async => called = true),
+        throwsA(isA<PlatformException>()),
+      );
 
       await deliverTag(plainTag('ghost'));
       expect(called, isFalse);
+    });
+  });
+
+  group('overlapping starts', () {
+    test('a start refused while another succeeded in between does not clobber the winner', () async {
+      // Two starts in flight. A fails for its own reason, B succeeds. A's teardown must not
+      // reach back and unregister B -- the arms are a stack, and A is removed from the
+      // middle of it rather than written over the top.
+      host.startError = PlatformException(code: 'no_activity');
+      final refused = expectLater(
+        NfcUtil.instance.startSession(onDiscovered: (_) async => fail('A never began')),
+        throwsA(isA<PlatformException>()),
+      );
+
+      host.startError = null;
+      final winner = <String>[];
+      await NfcUtil.instance.startSession(onDiscovered: (tag) async => winner.add(tag.handle));
+      await refused;
+
+      await deliverTag(plainTag('to-b'));
+      expect(winner, ['to-b']);
+    });
+
+    test('a start refused because one is already running restores the live session', () async {
+      final live = <String>[];
+      await NfcUtil.instance.startSession(onDiscovered: (tag) async => live.add(tag.handle));
+
+      host.startError = PlatformException(code: 'session_already_exists');
+      await expectLater(
+        NfcUtil.instance.startSession(onDiscovered: (_) async => fail('the refused session must not receive')),
+        throwsA(isA<PlatformException>()),
+      );
+
+      await deliverTag(plainTag('to-live'));
+      expect(live, ['to-live']);
+    });
+
+    test('stopSession wins over a start still in flight', () async {
+      // The stack is emptied, so the in-flight start's teardown cannot resurrect anything.
+      await NfcUtil.instance.startSession(onDiscovered: (_) async => fail('stopped'));
+      await NfcUtil.instance.stopSession();
+
+      host.startError = PlatformException(code: 'unavailable');
+      await expectLater(
+        NfcUtil.instance.startSession(onDiscovered: (_) async => fail('never began')),
+        throwsA(isA<PlatformException>()),
+      );
+
+      // Reaching this without a fail() is the assertion: neither the stopped session's
+      // handler nor the refused start's is armed.
+      await deliverTag(plainTag('after-stop'));
+      expect(host.disposed, contains('after-stop'), reason: 'an undelivered tag is still released');
     });
   });
 
@@ -446,9 +504,10 @@ void main() {
 
       // An empty configuration list is rejected before any session is touched.
       iosHost.vasBeginError = PlatformException(code: 'invalid_parameter');
-      await ios.NfcUtilIos.instance
-          .vasSessionBegin(configurations: const [], onResponse: (_) {})
-          .catchError((_) {});
+      await expectLater(
+        ios.NfcUtilIos.instance.vasSessionBegin(configurations: const [], onResponse: (_) {}),
+        throwsA(isA<PlatformException>()),
+      );
 
       await deliverTag(plainTag('untouched'));
       expect(seen, ['untouched']);

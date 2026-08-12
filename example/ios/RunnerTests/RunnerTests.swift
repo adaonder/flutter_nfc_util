@@ -222,6 +222,31 @@ class ReaderErrorCodeTests: XCTestCase {
   }
 }
 
+// MARK: - Argument narrowing
+
+class ByteNarrowingTests: XCTestCase {
+
+  /// Mirrors the guard the ISO 15693 and APDU entry points apply before touching CoreNFC.
+  ///
+  /// `UInt8(x)` traps rather than throwing, and the values reaching it are plain 64-bit ints
+  /// from the wire. `Iso15693.getSystemInfo()` reports `totalBlocks` for tags with thousands
+  /// of blocks, so a loop over every block used to kill the app at block 256.
+  private func narrow(_ value: Int64) -> UInt8? { UInt8(exactly: value) }
+
+  func testAcceptsTheWholeByteRange() {
+    XCTAssertEqual(narrow(0), 0)
+    XCTAssertEqual(narrow(255), 255)
+    XCTAssertEqual(narrow(128), 128)
+  }
+
+  func testRejectsRatherThanTrappingOutsideIt() {
+    XCTAssertNil(narrow(256), "the first block past a 256-block tag must report, not trap")
+    XCTAssertNil(narrow(2048), "an ST M24LR64E-R exposes 2048 blocks")
+    XCTAssertNil(narrow(-1))
+    XCTAssertNil(narrow(Int64.max))
+  }
+}
+
 // MARK: - NDEF conversion
 
 class NdefConversionTests: XCTestCase {

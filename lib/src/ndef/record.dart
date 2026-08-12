@@ -134,6 +134,17 @@ class NdefRecord {
       case NdefTypeNameFormat.external:
         break;
     }
+
+    // TYPE_LENGTH and ID_LENGTH are one byte each on the wire. Truncating instead of
+    // refusing would produce a record that encodes without complaint and that nothing --
+    // not this package's own parser, not the platform's -- can read back.
+    if (type.length > 255) {
+      throw ArgumentError.value(type.length, 'type', 'does not fit the one-byte TYPE_LENGTH field');
+    }
+    if (identifier.length > 255) {
+      throw ArgumentError.value(identifier.length, 'identifier', 'does not fit the one-byte ID_LENGTH field');
+    }
+
     return NdefRecord._(typeNameFormat: typeNameFormat, type: type, identifier: identifier, payload: payload);
   }
 
@@ -284,21 +295,29 @@ class UriRecord {
   /// there is no prefix byte.
   static UriRecord? from(NdefRecord record) {
     if (record.typeNameFormat == NdefTypeNameFormat.absoluteUri) {
-      final parsed = Uri.tryParse(utf8.decode(record.type, allowMalformed: true));
-      return parsed == null ? null : UriRecord._(parsed);
+      return _parse(utf8.decode(record.type, allowMalformed: true));
     }
 
     if (record.typeNameFormat != NdefTypeNameFormat.wellKnown) return null;
     if (!_bytesEqual(record.type, NdefRecord.wellKnownTypeUri)) return null;
-    if (record.payload.isEmpty) return null;
+    // The prefix byte alone is not a URI; a record carrying only it holds nothing to resolve.
+    if (record.payload.length < 2) return null;
 
     final prefixIndex = record.payload[0];
     // A prefix index this version does not know cannot be resolved; the rest of the payload
     // alone would be a different URI, so report "not a URI record" rather than guess.
     if (prefixIndex >= NdefRecord.uriPrefixList.length) return null;
 
-    final suffix = utf8.decode(record.payload.sublist(1), allowMalformed: true);
-    final parsed = Uri.tryParse('${NdefRecord.uriPrefixList[prefixIndex]}$suffix');
+    return _parse('${NdefRecord.uriPrefixList[prefixIndex]}'
+        '${utf8.decode(record.payload.sublist(1), allowMalformed: true)}');
+  }
+
+  /// Mirrors what [create] accepts, so a record this package refuses to write is also one it
+  /// refuses to read back. Without the empty check a zero-length absolute-URI record parses
+  /// as a valid URI, and inside a smart poster it shadows the real one.
+  static UriRecord? _parse(String value) {
+    if (value.isEmpty) return null;
+    final parsed = Uri.tryParse(value);
     return parsed == null ? null : UriRecord._(parsed);
   }
 
@@ -390,14 +409,24 @@ class SmartPosterRecord {
     }
 
     Uri? uri;
+    var sawWellKnownUri = false;
     final titles = <String, String>{};
     SmartPosterAction? action;
     ({String mimeType, Uint8List data})? icon;
 
     for (final inner in nested.records) {
       final asUri = UriRecord.from(inner);
-      if (asUri != null && uri == null) {
-        uri = asUri.uri;
+      if (asUri != null) {
+        // The poster's destination is its well-known `U` record; an absolute-URI record is a
+        // fallback and never displaces one. Taking whichever came first let a leading
+        // absolute-URI record shadow and discard the tag's real destination.
+        final isWellKnownUri =
+            inner.typeNameFormat == NdefTypeNameFormat.wellKnown &&
+            _bytesEqual(inner.type, NdefRecord.wellKnownTypeUri);
+        if (uri == null || (isWellKnownUri && !sawWellKnownUri)) {
+          uri = asUri.uri;
+          sawWellKnownUri = isWellKnownUri;
+        }
         continue;
       }
 

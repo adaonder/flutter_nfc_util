@@ -112,7 +112,9 @@ enum ReaderFlagPigeon { nfcA, nfcB, nfcF, nfcV, nfcBarcode, noPlatformSounds, sk
 ///
 /// Collapsing the technology into a parameter is what lets one `transceive` replace the
 /// seven the 2.x channel had, and one `getMaxTransceiveLength` replace seven more.
-enum AndroidTechPigeon { nfcA, nfcB, nfcF, nfcV, isoDep, mifareClassic, mifareUltralight, ndef, ndefFormatable }
+/// Only the technologies that answer a raw exchange. NDEF and NdefFormatable are addressed
+/// by their own methods, which take no technology.
+enum AndroidTechPigeon { nfcA, nfcB, nfcF, nfcV, isoDep, mifareClassic, mifareUltralight }
 
 /// NDEF Type-Name-Format, as defined by the NFC Forum. Ordinals match the on-tag values
 /// 0x00..0x06.
@@ -1137,7 +1139,7 @@ class MiFarePigeon {
 /// Every technology field is null when the tag does not support it, which is what the
 /// `X.from(tag)` constructors test. [id] is hoisted here because on Android every
 /// `android.nfc.tech` class reports the same `Tag.getId()`, and on iOS every tag protocol
-/// carries one identifier; 2.x repeated it on all thirteen technology classes.
+/// carries one identifier; 2.x repeated it on twelve of its thirteen technology classes.
 class TagPigeon {
   TagPigeon({
     required this.handle,

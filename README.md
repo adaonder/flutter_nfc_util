@@ -93,7 +93,7 @@ your own `strings.xml`.
 5. Wallet passes need `VAS` in `com.apple.developer.nfc.readersession.formats`, enabled on
    the App ID in the developer portal too.
 
-## The three libraries
+## The four libraries
 
 Portability is told by the import path rather than by a suffix on every class name.
 

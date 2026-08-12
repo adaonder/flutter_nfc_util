@@ -9,7 +9,10 @@ cd "$(dirname "$0")/.."
 
 dart run pigeon --input pigeon/messages.dart
 
-# Pigeon emits Dart that trips two lints the rest of the package enforces.
+# Pigeon's own output is not dart-format-clean at this package's width. Normalising it here
+# keeps a regeneration diff to the lines that actually changed instead of a whole-file
+# reflow. Nothing enforces the width -- it is a convention shared with the hand-written
+# sources.
 dart format --line-length 120 lib/src/pigeon.g.dart
 
 echo "Generated:"
