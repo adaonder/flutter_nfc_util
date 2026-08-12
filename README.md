@@ -1,4 +1,4 @@
-# nfc_util
+# NFC Util
 
 NFC for Flutter on Android and iOS: reader sessions, every tag technology both platforms
 expose, a real NDEF layer, background tag reading, host card emulation, and Apple Wallet
