@@ -1,0 +1,34 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Declared here rather than in the application so host card emulation works without the
+      app author copying boilerplate. It costs nothing on a device without HCE: the feature
+      is not required, so the app still installs, and the service is only ever started when
+      a reader selects an AID the app registered at run time.
+
+      Intent filters for background tag reading are the opposite case and are deliberately
+      NOT declared here. They have to name the application's own launcher activity, so only
+      the application can declare them. See the README.
+    -->
+    <uses-permission android:name="android.permission.NFC" />
+
+    <uses-feature
+        android:name="android.hardware.nfc.hce"
+        android:required="false" />
+
+    <application>
+        <service
+            android:name=".NfcUtilApduService"
+            android:exported="true"
+            android:permission="android.permission.BIND_NFC_SERVICE">
+            <intent-filter>
+                <action android:name="android.nfc.cardemulation.action.HOST_APDU_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.nfc.cardemulation.host_apdu_service"
+                android:resource="@xml/nfc_util_apduservice" />
+        </service>
+    </application>
+</manifest>

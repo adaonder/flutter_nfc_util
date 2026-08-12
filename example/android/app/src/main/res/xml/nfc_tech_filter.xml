@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Which tags should launch this app when tapped.
+
+  Each <tech-list> is an AND: the tag must answer to every technology in it. Separate lists
+  are an OR. Trim this to what the app actually handles, or every tap on any tag will offer
+  to open it.
+-->
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
+    <tech-list>
+        <tech>android.nfc.tech.Ndef</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.NdefFormatable</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.MifareClassic</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.MifareUltralight</tech>
+    </tech-list>
+    <tech-list>
+        <tech>android.nfc.tech.IsoDep</tech>
+    </tech-list>
+</resources>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declares the plugin's host card emulation service.
+
+  The AID below is a placeholder and is never meant to be selected by a reader. Android
+  only permits `CardEmulation.registerAidsForService` against a service that already
+  declares a group, so the group has to exist before an app can register its own AIDs at
+  run time. Registering replaces this list.
+
+  `requireDeviceUnlock="false"` so a tap works on a locked phone; an app that wants the
+  opposite can override this file by declaring a resource of the same name.
+-->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/nfc_util_hce_description"
+    android:requireDeviceUnlock="false">
+    <aid-group
+        android:category="other"
+        android:description="@string/nfc_util_hce_description">
+        <aid-filter android:name="F04E46435554494C" />
+    </aid-group>
+</host-apdu-service>

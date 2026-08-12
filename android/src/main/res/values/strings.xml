@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Shown in the system's "Tap and pay" settings when the user has more than one card
+      emulation app. Override it by declaring a string of the same name in the application,
+      which takes precedence over a library resource.
+    -->
+    <string name="nfc_util_hce_description">NFC card emulation</string>
+</resources>
