@@ -166,7 +166,11 @@ class NfcV extends _AndroidTag {
   @override
   AndroidTechPigeon get _tech => AndroidTechPigeon.nfcV;
 
+  /// The data storage format identifier, 0-255. Matches
+  /// [Iso15693SystemInfo.dataStorageFormatIdentifier] on iOS for the same tag.
   final int dsfId;
+
+  /// The response flags the tag answered the inventory with, 0-255.
   final int responseFlags;
 
   /// The value at discovery. Call [getMaxTransceiveLength] for the live one.
@@ -207,6 +211,7 @@ class IsoDep extends _AndroidTagWithTimeout {
   /// Set for an ISO 14443-4A tag; null for 14443-4B.
   final Uint8List? historicalBytes;
 
+  /// Whether the card accepts APDUs longer than 255 bytes.
   final bool isExtendedLengthApduSupported;
 
   /// The value at discovery. Call [getMaxTransceiveLength] for the live one.
@@ -255,8 +260,13 @@ class MifareClassic extends _AndroidTagWithTimeout {
   @override
   AndroidTechPigeon get _tech => AndroidTechPigeon.mifareClassic;
 
+  /// Which Mifare Classic product this is.
   final MifareClassicType type;
+
+  /// How many 16-byte blocks the card holds in total.
   final int blockCount;
+
+  /// How many sectors the card holds. Sector sizes are not uniform -- see [blockToSector].
   final int sectorCount;
 
   /// The tag's total size in bytes.
@@ -341,6 +351,7 @@ class MifareUltralight extends _AndroidTagWithTimeout {
   @override
   AndroidTechPigeon get _tech => AndroidTechPigeon.mifareUltralight;
 
+  /// Which Mifare Ultralight product this is.
   final MifareUltralightType type;
 
   /// The value at discovery. Call [getMaxTransceiveLength] for the live one.
@@ -381,6 +392,7 @@ class NfcBarcode {
     );
   }
 
+  /// Which barcode standard the tag follows.
   final NfcBarcodeType type;
 
   /// The barcode payload, when the tag reports one.

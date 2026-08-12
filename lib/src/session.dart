@@ -61,7 +61,7 @@ class NfcUtil {
   /// measurably faster, at the cost of `Ndef.from(tag)` returning null. Use it when the
   /// tag's NDEF content does not interest you.
   ///
-  /// Throws a [PlatformException] when the session cannot start, including
+  /// Throws a `PlatformException` when the session cannot start, including
   /// `session_already_exists` when one is still running. Unlike 2.x, both platforms report
   /// that the same way; Android used to replace the running session in silence.
   Future<void> startSession({

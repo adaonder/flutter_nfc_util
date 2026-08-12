@@ -50,7 +50,10 @@ class Iso7816ResponseApdu {
 class FeliCaStatusFlag {
   const FeliCaStatusFlag({required this.statusFlag1, required this.statusFlag2});
 
+  /// Status flag 1. Zero means the command succeeded.
   final int statusFlag1;
+
+  /// Status flag 2. Meaningful only when [statusFlag1] is non-zero, where it says why.
   final int statusFlag2;
 
   /// Whether the card reported success. FeliCa signals that with a zero first flag.
@@ -61,7 +64,11 @@ class FeliCaStatusFlag {
 class FeliCaPollingResponse {
   const FeliCaPollingResponse({required this.manufacturerParameter, required this.requestData});
 
+  /// The card's manufacture parameter, PMm.
   final Uint8List manufacturerParameter;
+
+  /// The data the request code asked for. Empty when the polling used
+  /// [FeliCaPollingRequestCode.noRequest].
   final Uint8List requestData;
 }
 
@@ -73,10 +80,16 @@ class FeliCaReadWithoutEncryptionResponse {
     required this.blockData,
   });
 
+  /// Status flag 1. Zero means the read succeeded.
   final int statusFlag1;
+
+  /// Status flag 2, which says why when [statusFlag1] is non-zero.
   final int statusFlag2;
+
+  /// One entry per requested block, in the order they were asked for. Empty on failure.
   final List<Uint8List> blockData;
 
+  /// Whether the card reported success.
   bool get isSuccess => statusFlag1 == 0x00;
 }
 
@@ -90,10 +103,19 @@ class FeliCaRequestServiceV2Response {
     required this.nodeKeyVersionListDes,
   });
 
+  /// Status flag 1. Zero means the command succeeded.
   final int statusFlag1;
+
+  /// Status flag 2, which says why when [statusFlag1] is non-zero.
   final int statusFlag2;
+
+  /// Which encryption the node uses: AES, DES, or both.
   final int encryptionIdentifier;
+
+  /// Key versions for the AES nodes. Null when the card reported none.
   final List<Uint8List>? nodeKeyVersionListAes;
+
+  /// Key versions for the DES nodes. Null when the card reported none.
   final List<Uint8List>? nodeKeyVersionListDes;
 }
 
@@ -106,9 +128,16 @@ class FeliCaRequestSpecificationVersionResponse {
     required this.optionVersion,
   });
 
+  /// Status flag 1. Zero means the command succeeded.
   final int statusFlag1;
+
+  /// Status flag 2, which says why when [statusFlag1] is non-zero.
   final int statusFlag2;
+
+  /// The version of the card's basic specification. Null when it reported none.
   final Uint8List? basicVersion;
+
+  /// The version of the card's optional specification. Null when it implements none.
   final Uint8List? optionVersion;
 }
 
@@ -122,10 +151,20 @@ class Iso15693SystemInfo {
     required this.totalBlocks,
   });
 
+  /// The AFI, which groups tags by application. 0 means the tag is in every group.
   final int applicationFamilyIdentifier;
+
+  /// The size of one block, in bytes.
   final int blockSize;
+
+  /// The DSFID, an application-defined byte describing how the data is laid out.
   final int dataStorageFormatIdentifier;
+
+  /// The manufacturer's IC reference.
   final int icReference;
+
+  /// How many blocks the tag holds. Note this can exceed 255, in which case the block number
+  /// arguments below cannot address them all -- the extended commands exist for that.
   final int totalBlocks;
 }
 
@@ -133,6 +172,7 @@ class Iso15693SystemInfo {
 class QueryNdefStatusResponse {
   const QueryNdefStatusResponse({required this.status, required this.capacity});
 
+  /// Whether the tag holds NDEF at all, and whether it can still be written.
   final NdefStatus status;
 
   /// The largest NDEF message the tag can hold, in bytes.
@@ -156,9 +196,16 @@ class FeliCa {
 
   final String _handle;
 
+  /// The system code the card is currently addressing.
   final Uint8List currentSystemCode;
+
+  /// The card's manufacture identifier, IDm -- its UID for this session.
   final Uint8List currentIDm;
 
+  /// Selects a system on the card and reads what [requestCode] asks for.
+  ///
+  /// [timeSlot] is how many slots the card may answer in; more slots reduce collisions when
+  /// several cards are present, at the cost of time.
   Future<FeliCaPollingResponse> polling({
     required Uint8List systemCode,
     required FeliCaPollingRequestCode requestCode,
@@ -186,13 +233,19 @@ class FeliCa {
     );
   }
 
+  /// Asks the card for its current mode. Chiefly a liveness check.
   Future<int> requestResponse() => iosApi.felicaRequestResponse(_handle);
 
+  /// Lists every system code the card carries, not just the one currently selected.
   Future<List<Uint8List>> requestSystemCode() => iosApi.felicaRequestSystemCode(_handle);
 
+  /// Reads the key version of each node in [nodeCodeList].
+  ///
+  /// A key version of `FFFF` means the node does not exist on this card.
   Future<List<Uint8List>> requestService({required List<Uint8List> nodeCodeList}) =>
       iosApi.felicaRequestService(_handle, nodeCodeList);
 
+  /// As [requestService], but also reports which encryption each node uses.
   Future<FeliCaRequestServiceV2Response> requestServiceV2({required List<Uint8List> nodeCodeList}) async {
     final response = await iosApi.felicaRequestServiceV2(_handle, nodeCodeList);
     return FeliCaRequestServiceV2Response(
@@ -204,6 +257,11 @@ class FeliCa {
     );
   }
 
+  /// Reads blocks from services that need no authentication.
+  ///
+  /// [blockList] entries are block list elements, not plain block numbers: the first byte
+  /// carries the access mode and the service index, so build them per the FeliCa
+  /// specification rather than passing bare indices.
   Future<FeliCaReadWithoutEncryptionResponse> readWithoutEncryption({
     required List<Uint8List> serviceCodeList,
     required List<Uint8List> blockList,
@@ -216,6 +274,9 @@ class FeliCa {
     );
   }
 
+  /// Writes blocks to services that need no authentication.
+  ///
+  /// [blockData] must hold one 16-byte block per entry in [blockList], in the same order.
   Future<FeliCaStatusFlag> writeWithoutEncryption({
     required List<Uint8List> serviceCodeList,
     required List<Uint8List> blockList,
@@ -225,6 +286,7 @@ class FeliCa {
     return FeliCaStatusFlag(statusFlag1: response.statusFlag1, statusFlag2: response.statusFlag2);
   }
 
+  /// Reads which version of the FeliCa specification the card implements.
   Future<FeliCaRequestSpecificationVersionResponse> requestSpecificationVersion() async {
     final response = await iosApi.felicaRequestSpecificationVersion(_handle);
     return FeliCaRequestSpecificationVersionResponse(
@@ -235,6 +297,7 @@ class FeliCa {
     );
   }
 
+  /// Returns the card to mode 0, undoing whatever mode a previous command left it in.
   Future<FeliCaStatusFlag> resetMode() async {
     final response = await iosApi.felicaResetMode(_handle);
     return FeliCaStatusFlag(statusFlag1: response.statusFlag1, statusFlag2: response.statusFlag2);
@@ -258,27 +321,36 @@ class Iso15693 {
 
   final String _handle;
 
+  /// The IC manufacturer's registration code, as assigned by ISO/IEC 7816-6.
   final int icManufacturerCode;
+
+  /// The manufacturer-assigned serial number, which together with [icManufacturerCode] makes
+  /// up the tag's UID.
   final Uint8List icSerialNumber;
 
+  /// Reads one block. [blockNumber] is 0-255; use [extendedReadSingleBlock] beyond that.
   Future<Uint8List> readSingleBlock({required Set<Iso15693RequestFlag> requestFlags, required int blockNumber}) =>
       iosApi.iso15693ReadSingleBlock(_handle, _flags(requestFlags), blockNumber);
 
+  /// Writes one block. [dataBlock] must be exactly the tag's block size.
   Future<void> writeSingleBlock({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
     required Uint8List dataBlock,
   }) => iosApi.iso15693WriteSingleBlock(_handle, _flags(requestFlags), blockNumber, dataBlock);
 
+  /// Locks one block permanently. It can never be written again.
   Future<void> lockBlock({required Set<Iso15693RequestFlag> requestFlags, required int blockNumber}) =>
       iosApi.iso15693LockBlock(_handle, _flags(requestFlags), blockNumber);
 
+  /// Reads [numberOfBlocks] consecutive blocks starting at [blockNumber], one entry each.
   Future<List<Uint8List>> readMultipleBlocks({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
     required int numberOfBlocks,
   }) => iosApi.iso15693ReadMultipleBlocks(_handle, _flags(requestFlags), blockNumber, numberOfBlocks);
 
+  /// Writes consecutive blocks. [dataBlocks] must hold [numberOfBlocks] entries.
   Future<void> writeMultipleBlocks({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
@@ -286,52 +358,65 @@ class Iso15693 {
     required List<Uint8List> dataBlocks,
   }) => iosApi.iso15693WriteMultipleBlocks(_handle, _flags(requestFlags), blockNumber, numberOfBlocks, dataBlocks);
 
+  /// Reports the lock state of each block in the range, one entry per block.
   Future<List<int>> getMultipleBlockSecurityStatus({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
     required int numberOfBlocks,
   }) => iosApi.iso15693GetMultipleBlockSecurityStatus(_handle, _flags(requestFlags), blockNumber, numberOfBlocks);
 
+  /// Sets the application family identifier, 0-255.
   Future<void> writeAfi({required Set<Iso15693RequestFlag> requestFlags, required int afi}) =>
       iosApi.iso15693WriteAfi(_handle, _flags(requestFlags), afi);
 
+  /// Locks the AFI permanently.
   Future<void> lockAfi({required Set<Iso15693RequestFlag> requestFlags}) =>
       iosApi.iso15693LockAfi(_handle, _flags(requestFlags));
 
+  /// Sets the data storage format identifier, 0-255.
   Future<void> writeDsfId({required Set<Iso15693RequestFlag> requestFlags, required int dsfId}) =>
       iosApi.iso15693WriteDsfId(_handle, _flags(requestFlags), dsfId);
 
+  /// Locks the DSFID permanently.
   Future<void> lockDsfId({required Set<Iso15693RequestFlag> requestFlags}) =>
       iosApi.iso15693LockDsfId(_handle, _flags(requestFlags));
 
+  /// Moves the tag back to the ready state, undoing [select] or [stayQuiet].
   Future<void> resetToReady({required Set<Iso15693RequestFlag> requestFlags}) =>
       iosApi.iso15693ResetToReady(_handle, _flags(requestFlags));
 
+  /// Puts the tag in the selected state, so later commands need not carry its UID.
   Future<void> select({required Set<Iso15693RequestFlag> requestFlags}) =>
       iosApi.iso15693Select(_handle, _flags(requestFlags));
 
+  /// Silences the tag until it leaves the field, so other tags can be reached.
   Future<void> stayQuiet() => iosApi.iso15693StayQuiet(_handle);
 
+  /// As [readSingleBlock], for tags with more than 256 blocks.
   Future<Uint8List> extendedReadSingleBlock({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
   }) => iosApi.iso15693ExtendedReadSingleBlock(_handle, _flags(requestFlags), blockNumber);
 
+  /// As [writeSingleBlock], for tags with more than 256 blocks.
   Future<void> extendedWriteSingleBlock({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
     required Uint8List dataBlock,
   }) => iosApi.iso15693ExtendedWriteSingleBlock(_handle, _flags(requestFlags), blockNumber, dataBlock);
 
+  /// As [lockBlock], for tags with more than 256 blocks.
   Future<void> extendedLockBlock({required Set<Iso15693RequestFlag> requestFlags, required int blockNumber}) =>
       iosApi.iso15693ExtendedLockBlock(_handle, _flags(requestFlags), blockNumber);
 
+  /// As [readMultipleBlocks], for tags with more than 256 blocks.
   Future<List<Uint8List>> extendedReadMultipleBlocks({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
     required int numberOfBlocks,
   }) => iosApi.iso15693ExtendedReadMultipleBlocks(_handle, _flags(requestFlags), blockNumber, numberOfBlocks);
 
+  /// Reads the tag's own description: block size, block count, AFI and DSFID.
   Future<Iso15693SystemInfo> getSystemInfo({required Set<Iso15693RequestFlag> requestFlags}) async {
     final info = await iosApi.iso15693GetSystemInfo(_handle, _flags(requestFlags));
     return Iso15693SystemInfo(
@@ -343,6 +428,7 @@ class Iso15693 {
     );
   }
 
+  /// Sends a manufacturer-defined command. [customCommandCode] is 0xA0-0xDF.
   Future<Uint8List> customCommand({
     required Set<Iso15693RequestFlag> requestFlags,
     required int customCommandCode,
@@ -391,8 +477,13 @@ class Iso7816 {
   /// The application CoreNFC selected while discovering the card, as hex.
   final String initialSelectedAID;
 
+  /// The card's historical bytes, when it reported any.
   final Uint8List? historicalBytes;
+
+  /// The application data from the FCI template, when the card reported any.
   final Uint8List? applicationData;
+
+  /// Whether [applicationData] is encoded proprietarily rather than per ISO 7816-4.
   final bool proprietaryApplicationDataCoding;
 
   /// Sends a command APDU assembled from its fields.
@@ -446,7 +537,10 @@ class MiFare {
 
   final String _handle;
 
+  /// Which Mifare product this is, as far as CoreNFC could tell.
   final MiFareFamily family;
+
+  /// The historical bytes, for a DESFire card that reported any. Null otherwise.
   final Uint8List? historicalBytes;
 
   /// Sends a native Mifare command.
