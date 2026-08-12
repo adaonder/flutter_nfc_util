@@ -17,8 +17,18 @@
         android:required="false" />
 
     <application>
+        <!--
+          Disabled by default, and enabled at run time by HostCardEmulation.registerAids.
+
+          A static AID group has to exist before Android will accept a dynamic registration,
+          but shipping it enabled made every app that merely depends on this plugin appear in
+          the system's card-emulation registry, claiming the placeholder AID below, even when
+          it only ever reads tags. An app that never asks to emulate a card should not become
+          a card.
+        -->
         <service
             android:name=".NfcUtilApduService"
+            android:enabled="false"
             android:exported="true"
             android:permission="android.permission.BIND_NFC_SERVICE">
             <intent-filter>

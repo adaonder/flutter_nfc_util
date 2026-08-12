@@ -90,8 +90,13 @@ your own `strings.xml`.
    `pollingOptions`. This is the single most common iOS setup mistake.
 4. ISO 7816 tags additionally need
    `com.apple.developer.nfc.readersession.iso7816.select-identifiers`.
-5. Wallet passes need `VAS` in `com.apple.developer.nfc.readersession.formats`, enabled on
-   the App ID in the developer portal too.
+5. Wallet passes need `VAS` in `com.apple.developer.nfc.readersession.formats`. This is
+   **not** part of the Xcode capability, which grants only `NDEF` and `TAG`: the App ID has
+   to be provisioned for VAS separately, and adding the value to a profile that does not
+   carry it fails the **build**, not the session —
+   *"Provisioning profile ... doesn't match the entitlements file's value for the
+   com.apple.developer.nfc.readersession.formats entitlement"*. The example app therefore
+   ships without it, so it builds on any team; add it once your own App ID is provisioned.
 
 ## The four libraries
 

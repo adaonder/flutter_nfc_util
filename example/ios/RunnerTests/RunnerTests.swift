@@ -8,9 +8,14 @@ import XCTest
 /*
  * Unit tests for the pure-logic parts of the Swift implementation.
  *
- * Run them from the `example/ios` directory with
- * `xcodebuild test -workspace Runner.xcworkspace -scheme Runner -destination 'platform=iOS Simulator,name=iPhone 16'`,
- * or from the Runner scheme's test action in Xcode.
+ * Run `flutter build ios --simulator --debug` from `example/` FIRST, then from `example/ios`
+ * run `xcodebuild test -workspace Runner.xcworkspace -scheme Runner -destination '<simulator>'`,
+ * or use the Runner scheme's test action in Xcode.
+ *
+ * The build step is not optional. Xcode resolves FlutterGeneratedPluginSwiftPackage before
+ * running the Flutter script phase that regenerates it, so a package left over from a device
+ * build fails the test target with "requires minimum platform version 15.6 ... but this
+ * target supports 13.0".
  *
  * The session lifecycle itself is not reachable from here: `NFCTagReaderSession` refuses to
  * initialize wherever `readingAvailable` is false, which includes every simulator, so

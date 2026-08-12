@@ -22,7 +22,7 @@ FeliCa, ISO7816, ISO15693 and MiFare tag technologies.
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
-  s.swift_version = '5.0'
+  s.swift_version = '5.9'
 
   # Keep this in sync with Package.swift, which already processes Resources/. Without it,
   # CocoaPods builds ship without the privacy manifest while SwiftPM builds include it.

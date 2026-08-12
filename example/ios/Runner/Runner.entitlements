@@ -3,15 +3,24 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  NDEF and TAG cover reader sessions. VAS is what NfcUtilIos.vasSessionBegin needs, and
-	  it has to be enabled on the App ID in the developer portal as well; a provisioning
-	  profile without it makes the session fail asynchronously through onError.
+	  NDEF and TAG are what Xcode's "Near Field Communication Tag Reading" capability grants,
+	  so this file signs against an ordinary automatic provisioning profile.
+
+	  VAS, which NfcUtilIos.vasSessionBegin needs, is deliberately NOT here. It is not part of
+	  that capability: the App ID has to be provisioned for it separately, and adding it to a
+	  profile that does not carry it fails the build outright --
+
+	      Provisioning profile "..." doesn't match the entitlements file's value for the
+	      com.apple.developer.nfc.readersession.formats entitlement
+
+	  -- rather than failing at run time. Add <string>VAS</string> below only once your own
+	  App ID is provisioned for it; until then the example's "Wallet pass" button reports the
+	  refusal through onError, which is the honest behaviour to demonstrate anyway.
 	-->
 	<key>com.apple.developer.nfc.readersession.formats</key>
 	<array>
 		<string>NDEF</string>
 		<string>TAG</string>
-		<string>VAS</string>
 	</array>
 </dict>
 </plist>

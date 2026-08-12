@@ -617,6 +617,11 @@ class NfcUtilPlugin :
         val emulation = cardEmulation() ?: return callback(failure("unavailable", "Card emulation is unavailable."))
         val component = apduServiceComponent() ?: return callback(failure("unavailable", "No application context."))
 
+        // The service ships disabled so a reader-only app does not appear in the system's
+        // card-emulation registry. Asking to register AIDs is the point at which the app has
+        // said it wants to be a card.
+        setApduServiceEnabled(true)
+
         val registered = runCatching { emulation.registerAidsForService(component, CardEmulation.CATEGORY_OTHER, aids) }
         registered.onFailure {
             return callback(Result.failure(FlutterErrorOf("unavailable", it.message ?: "")))
@@ -633,10 +638,26 @@ class NfcUtilPlugin :
         val component = apduServiceComponent() ?: return callback(failure("unavailable", "No application context."))
 
         if (NfcUtilApduService.activeBridge === this) NfcUtilApduService.activeBridge = null
-        callback(
-            runCatching { emulation.removeAidsForService(component, CardEmulation.CATEGORY_OTHER) }
-                .fold({ Result.success(it) }, { Result.failure(FlutterErrorOf("unavailable", it.message ?: "")) }),
-        )
+        val removed = runCatching { emulation.removeAidsForService(component, CardEmulation.CATEGORY_OTHER) }
+        // Back to invisible: the app is no longer offering to be a card.
+        setApduServiceEnabled(false)
+        callback(removed.fold({ Result.success(it) }, { Result.failure(FlutterErrorOf("unavailable", it.message ?: "")) }))
+    }
+
+    /**
+     * Turns the emulation service on or off as a package component.
+     *
+     * `DONT_KILL_APP` because the alternative is restarting the very process that asked.
+     */
+    private fun setApduServiceEnabled(enabled: Boolean) {
+        val context = applicationContext ?: return
+        val component = apduServiceComponent() ?: return
+        val state = if (enabled) {
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        } else {
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        }
+        runCatching { context.packageManager.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP) }
     }
 
     override fun hceRespond(response: ByteArray) {
