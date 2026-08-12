@@ -547,7 +547,9 @@ struct SessionConfigPigeon: Hashable, CustomStringConvertible {
 
 /// Generated class from Pigeon that represents data sent in messages.
 struct NfcAPigeon: Hashable, CustomStringConvertible {
-  var atqa: FlutterStandardTypedData
+  /// Null when the stack did not report the poll bytes: AOSP only populates the tech extras
+  /// once it has enough of them, and a target that answered a short SENS_RES has none.
+  var atqa: FlutterStandardTypedData? = nil
   var sak: Int64
   var maxTransceiveLength: Int64
   var timeout: Int64
@@ -555,7 +557,7 @@ struct NfcAPigeon: Hashable, CustomStringConvertible {
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
   static func fromList(_ pigeonVar_list: [Any?]) -> NfcAPigeon? {
-    let atqa = pigeonVar_list[0] as! FlutterStandardTypedData
+    let atqa: FlutterStandardTypedData? = nilOrValue(pigeonVar_list[0])
     let sak = pigeonVar_list[1] as! Int64
     let maxTransceiveLength = pigeonVar_list[2] as! Int64
     let timeout = pigeonVar_list[3] as! Int64
@@ -597,15 +599,18 @@ struct NfcAPigeon: Hashable, CustomStringConvertible {
 
 /// Generated class from Pigeon that represents data sent in messages.
 struct NfcBPigeon: Hashable, CustomStringConvertible {
-  var applicationData: FlutterStandardTypedData
-  var protocolInfo: FlutterStandardTypedData
+  /// Null when the tag reported no ATQB parameters. AOSP fills these two only when the poll
+  /// bytes reach seven, and a B-prime target -- Innovatron, legacy Calypso transit -- answers
+  /// no SENSB_RES at all while still being reported as ISO 14443-3B.
+  var applicationData: FlutterStandardTypedData? = nil
+  var protocolInfo: FlutterStandardTypedData? = nil
   var maxTransceiveLength: Int64
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
   static func fromList(_ pigeonVar_list: [Any?]) -> NfcBPigeon? {
-    let applicationData = pigeonVar_list[0] as! FlutterStandardTypedData
-    let protocolInfo = pigeonVar_list[1] as! FlutterStandardTypedData
+    let applicationData: FlutterStandardTypedData? = nilOrValue(pigeonVar_list[0])
+    let protocolInfo: FlutterStandardTypedData? = nilOrValue(pigeonVar_list[1])
     let maxTransceiveLength = pigeonVar_list[2] as! Int64
 
     return NfcBPigeon(
@@ -642,16 +647,17 @@ struct NfcBPigeon: Hashable, CustomStringConvertible {
 
 /// Generated class from Pigeon that represents data sent in messages.
 struct NfcFPigeon: Hashable, CustomStringConvertible {
-  var manufacturer: FlutterStandardTypedData
-  var systemCode: FlutterStandardTypedData
+  /// Null when the stack did not report the poll bytes, as for [NfcAPigeon.atqa].
+  var manufacturer: FlutterStandardTypedData? = nil
+  var systemCode: FlutterStandardTypedData? = nil
   var maxTransceiveLength: Int64
   var timeout: Int64
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
   static func fromList(_ pigeonVar_list: [Any?]) -> NfcFPigeon? {
-    let manufacturer = pigeonVar_list[0] as! FlutterStandardTypedData
-    let systemCode = pigeonVar_list[1] as! FlutterStandardTypedData
+    let manufacturer: FlutterStandardTypedData? = nilOrValue(pigeonVar_list[0])
+    let systemCode: FlutterStandardTypedData? = nilOrValue(pigeonVar_list[1])
     let maxTransceiveLength = pigeonVar_list[2] as! Int64
     let timeout = pigeonVar_list[3] as! Int64
 

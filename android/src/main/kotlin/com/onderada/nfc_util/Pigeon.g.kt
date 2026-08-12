@@ -681,7 +681,11 @@ data class SessionConfigPigeon (
 
 /** Generated class from Pigeon that represents data sent in messages. */
 data class NfcAPigeon (
-  val atqa: ByteArray,
+  /**
+   * Null when the stack did not report the poll bytes: AOSP only populates the tech extras
+   * once it has enough of them, and a target that answered a short SENS_RES has none.
+   */
+  val atqa: ByteArray? = null,
   val sak: Long,
   val maxTransceiveLength: Long,
   val timeout: Long
@@ -689,7 +693,7 @@ data class NfcAPigeon (
  {
   companion object {
     fun fromList(pigeonVar_list: List<Any?>): NfcAPigeon {
-      val atqa = pigeonVar_list[0] as ByteArray
+      val atqa = pigeonVar_list[0] as ByteArray?
       val sak = pigeonVar_list[1] as Long
       val maxTransceiveLength = pigeonVar_list[2] as Long
       val timeout = pigeonVar_list[3] as Long
@@ -724,21 +728,26 @@ data class NfcAPigeon (
     return result
   }
   override fun toString(): String {
-    return "NfcAPigeon(atqa=${atqa.contentToString()}, sak=$sak, maxTransceiveLength=$maxTransceiveLength, timeout=$timeout)"
+    return "NfcAPigeon(atqa=${atqa?.contentToString()}, sak=$sak, maxTransceiveLength=$maxTransceiveLength, timeout=$timeout)"
   }
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
 data class NfcBPigeon (
-  val applicationData: ByteArray,
-  val protocolInfo: ByteArray,
+  /**
+   * Null when the tag reported no ATQB parameters. AOSP fills these two only when the poll
+   * bytes reach seven, and a B-prime target -- Innovatron, legacy Calypso transit -- answers
+   * no SENSB_RES at all while still being reported as ISO 14443-3B.
+   */
+  val applicationData: ByteArray? = null,
+  val protocolInfo: ByteArray? = null,
   val maxTransceiveLength: Long
 )
  {
   companion object {
     fun fromList(pigeonVar_list: List<Any?>): NfcBPigeon {
-      val applicationData = pigeonVar_list[0] as ByteArray
-      val protocolInfo = pigeonVar_list[1] as ByteArray
+      val applicationData = pigeonVar_list[0] as ByteArray?
+      val protocolInfo = pigeonVar_list[1] as ByteArray?
       val maxTransceiveLength = pigeonVar_list[2] as Long
       return NfcBPigeon(applicationData, protocolInfo, maxTransceiveLength)
     }
@@ -769,22 +778,23 @@ data class NfcBPigeon (
     return result
   }
   override fun toString(): String {
-    return "NfcBPigeon(applicationData=${applicationData.contentToString()}, protocolInfo=${protocolInfo.contentToString()}, maxTransceiveLength=$maxTransceiveLength)"
+    return "NfcBPigeon(applicationData=${applicationData?.contentToString()}, protocolInfo=${protocolInfo?.contentToString()}, maxTransceiveLength=$maxTransceiveLength)"
   }
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
 data class NfcFPigeon (
-  val manufacturer: ByteArray,
-  val systemCode: ByteArray,
+  /** Null when the stack did not report the poll bytes, as for [NfcAPigeon.atqa]. */
+  val manufacturer: ByteArray? = null,
+  val systemCode: ByteArray? = null,
   val maxTransceiveLength: Long,
   val timeout: Long
 )
  {
   companion object {
     fun fromList(pigeonVar_list: List<Any?>): NfcFPigeon {
-      val manufacturer = pigeonVar_list[0] as ByteArray
-      val systemCode = pigeonVar_list[1] as ByteArray
+      val manufacturer = pigeonVar_list[0] as ByteArray?
+      val systemCode = pigeonVar_list[1] as ByteArray?
       val maxTransceiveLength = pigeonVar_list[2] as Long
       val timeout = pigeonVar_list[3] as Long
       return NfcFPigeon(manufacturer, systemCode, maxTransceiveLength, timeout)
@@ -818,7 +828,7 @@ data class NfcFPigeon (
     return result
   }
   override fun toString(): String {
-    return "NfcFPigeon(manufacturer=${manufacturer.contentToString()}, systemCode=${systemCode.contentToString()}, maxTransceiveLength=$maxTransceiveLength, timeout=$timeout)"
+    return "NfcFPigeon(manufacturer=${manufacturer?.contentToString()}, systemCode=${systemCode?.contentToString()}, maxTransceiveLength=$maxTransceiveLength, timeout=$timeout)"
   }
 }
 

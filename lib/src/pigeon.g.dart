@@ -395,9 +395,11 @@ class SessionConfigPigeon {
 }
 
 class NfcAPigeon {
-  NfcAPigeon({required this.atqa, required this.sak, required this.maxTransceiveLength, required this.timeout});
+  NfcAPigeon({this.atqa, required this.sak, required this.maxTransceiveLength, required this.timeout});
 
-  Uint8List atqa;
+  /// Null when the stack did not report the poll bytes: AOSP only populates the tech extras
+  /// once it has enough of them, and a target that answered a short SENS_RES has none.
+  Uint8List? atqa;
 
   int sak;
 
@@ -416,7 +418,7 @@ class NfcAPigeon {
   static NfcAPigeon decode(Object result) {
     result as List<Object?>;
     return NfcAPigeon(
-      atqa: result[0]! as Uint8List,
+      atqa: result[0] as Uint8List?,
       sak: result[1]! as int,
       maxTransceiveLength: result[2]! as int,
       timeout: result[3]! as int,
@@ -449,11 +451,14 @@ class NfcAPigeon {
 }
 
 class NfcBPigeon {
-  NfcBPigeon({required this.applicationData, required this.protocolInfo, required this.maxTransceiveLength});
+  NfcBPigeon({this.applicationData, this.protocolInfo, required this.maxTransceiveLength});
 
-  Uint8List applicationData;
+  /// Null when the tag reported no ATQB parameters. AOSP fills these two only when the poll
+  /// bytes reach seven, and a B-prime target -- Innovatron, legacy Calypso transit -- answers
+  /// no SENSB_RES at all while still being reported as ISO 14443-3B.
+  Uint8List? applicationData;
 
-  Uint8List protocolInfo;
+  Uint8List? protocolInfo;
 
   int maxTransceiveLength;
 
@@ -468,8 +473,8 @@ class NfcBPigeon {
   static NfcBPigeon decode(Object result) {
     result as List<Object?>;
     return NfcBPigeon(
-      applicationData: result[0]! as Uint8List,
-      protocolInfo: result[1]! as Uint8List,
+      applicationData: result[0] as Uint8List?,
+      protocolInfo: result[1] as Uint8List?,
       maxTransceiveLength: result[2]! as int,
     );
   }
@@ -499,16 +504,12 @@ class NfcBPigeon {
 }
 
 class NfcFPigeon {
-  NfcFPigeon({
-    required this.manufacturer,
-    required this.systemCode,
-    required this.maxTransceiveLength,
-    required this.timeout,
-  });
+  NfcFPigeon({this.manufacturer, this.systemCode, required this.maxTransceiveLength, required this.timeout});
 
-  Uint8List manufacturer;
+  /// Null when the stack did not report the poll bytes, as for [NfcAPigeon.atqa].
+  Uint8List? manufacturer;
 
-  Uint8List systemCode;
+  Uint8List? systemCode;
 
   int maxTransceiveLength;
 
@@ -525,8 +526,8 @@ class NfcFPigeon {
   static NfcFPigeon decode(Object result) {
     result as List<Object?>;
     return NfcFPigeon(
-      manufacturer: result[0]! as Uint8List,
-      systemCode: result[1]! as Uint8List,
+      manufacturer: result[0] as Uint8List?,
+      systemCode: result[1] as Uint8List?,
       maxTransceiveLength: result[2]! as int,
       timeout: result[3]! as int,
     );

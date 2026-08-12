@@ -89,6 +89,43 @@ void main() {
   });
 
   group('Android technologies', () {
+    test('a technology the platform could not describe is simply absent', () {
+      // A throw building one technology used to take down the whole tag, so an app that only
+      // wanted the UID got nothing. Each is independent now.
+      final tag = tagWith(
+        id: bytes([0x04, 0x11]),
+        techList: ['NfcB', 'IsoDep'],
+        nfcB: null,
+        isoDep: IsoDepPigeon(
+          hiLayerResponse: null,
+          historicalBytes: null,
+          isExtendedLengthApduSupported: false,
+          maxTransceiveLength: 261,
+          timeout: 300,
+        ),
+      );
+
+      expect(NfcB.from(tag), isNull);
+      expect(IsoDep.from(tag), isNotNull, reason: 'the rest of the tag still has to arrive');
+      expect(tag.id, bytes([0x04, 0x11]));
+    });
+
+    test('poll bytes the stack never reported read as null, not empty', () {
+      // AOSP fills these only once the poll bytes are long enough; a B-prime target answers
+      // no SENSB_RES at all. Empty would say "the tag answered nothing", which is a lie.
+      final nfcB = NfcB.from(
+        tagWith(nfcB: NfcBPigeon(applicationData: null, protocolInfo: null, maxTransceiveLength: 253)),
+      )!;
+      expect(nfcB.applicationData, isNull);
+      expect(nfcB.protocolInfo, isNull);
+
+      final nfcA = NfcA.from(
+        tagWith(nfcA: NfcAPigeon(atqa: null, sak: 0x20, maxTransceiveLength: 253, timeout: 618)),
+      )!;
+      expect(nfcA.atqa, isNull);
+      expect(nfcA.sak, 0x20, reason: 'the values that are present still arrive');
+    });
+
     test('NfcA carries its discovery-time values', () {
       final nfcA = NfcA.from(
         tagWith(nfcA: NfcAPigeon(atqa: bytes([0x44, 0x00]), sak: 0x00, maxTransceiveLength: 253, timeout: 618)),

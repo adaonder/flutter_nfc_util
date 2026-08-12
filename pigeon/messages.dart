@@ -192,21 +192,27 @@ class SessionConfigPigeon {
 // ---------------------------------------------------------------------------------------
 
 class NfcAPigeon {
-  late Uint8List atqa;
+  /// Null when the stack did not report the poll bytes: AOSP only populates the tech extras
+  /// once it has enough of them, and a target that answered a short SENS_RES has none.
+  Uint8List? atqa;
   late int sak;
   late int maxTransceiveLength;
   late int timeout;
 }
 
 class NfcBPigeon {
-  late Uint8List applicationData;
-  late Uint8List protocolInfo;
+  /// Null when the tag reported no ATQB parameters. AOSP fills these two only when the poll
+  /// bytes reach seven, and a B-prime target -- Innovatron, legacy Calypso transit -- answers
+  /// no SENSB_RES at all while still being reported as ISO 14443-3B.
+  Uint8List? applicationData;
+  Uint8List? protocolInfo;
   late int maxTransceiveLength;
 }
 
 class NfcFPigeon {
-  late Uint8List manufacturer;
-  late Uint8List systemCode;
+  /// Null when the stack did not report the poll bytes, as for [NfcAPigeon.atqa].
+  Uint8List? manufacturer;
+  Uint8List? systemCode;
   late int maxTransceiveLength;
   late int timeout;
 }

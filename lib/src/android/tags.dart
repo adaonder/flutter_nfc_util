@@ -63,7 +63,10 @@ class NfcA extends _AndroidTagWithTimeout {
   AndroidTechPigeon get _tech => AndroidTechPigeon.nfcA;
 
   /// The answer-to-request value, captured at discovery.
-  final Uint8List atqa;
+  ///
+  /// Null when the stack reported no poll bytes for this tag. Empty would be a lie: it is
+  /// not "the tag answered nothing", it is "the platform never told us".
+  final Uint8List? atqa;
 
   /// The select-acknowledge value, captured at discovery.
   final int sak;
@@ -94,8 +97,12 @@ class NfcB extends _AndroidTag {
   @override
   AndroidTechPigeon get _tech => AndroidTechPigeon.nfcB;
 
-  final Uint8List applicationData;
-  final Uint8List protocolInfo;
+  /// The ATQB application data. Null when the tag reported no ATQB parameters -- a B-prime
+  /// target answers no SENSB_RES at all yet is still reported as ISO 14443-3B.
+  final Uint8List? applicationData;
+
+  /// The ATQB protocol info. Null under the same conditions as [applicationData].
+  final Uint8List? protocolInfo;
 
   /// The value at discovery. Call [getMaxTransceiveLength] for the live one.
   final int maxTransceiveLength;
@@ -127,8 +134,11 @@ class NfcF extends _AndroidTagWithTimeout {
   @override
   AndroidTechPigeon get _tech => AndroidTechPigeon.nfcF;
 
-  final Uint8List manufacturer;
-  final Uint8List systemCode;
+  /// Null when the stack reported no poll bytes for this tag.
+  final Uint8List? manufacturer;
+
+  /// Null under the same conditions as [manufacturer].
+  final Uint8List? systemCode;
 
   /// The value at discovery. Call [getMaxTransceiveLength] for the live one.
   final int maxTransceiveLength;

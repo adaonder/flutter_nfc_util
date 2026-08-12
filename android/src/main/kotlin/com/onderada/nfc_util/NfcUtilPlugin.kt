@@ -289,7 +289,7 @@ class NfcUtilPlugin :
         val wire = try {
             TagMapper.toWire(tag, handle, skipNdef)
         } catch (e: Throwable) {
-            Log.w(TAG, "could not read the discovered tag", e)
+            Log.e(TAG, "could not read the discovered tag", e)
             // 2.x dropped this silently, which left an app watching a session that looked
             // alive but delivered nothing.
             reportError(TagMapper.errorCode(e), "Discovered tag could not be read: ${e.message}")
@@ -384,7 +384,15 @@ class NfcUtilPlugin :
 
         val tag = intentExtraTag(intent) ?: return
         val handle = UUID.randomUUID().toString()
-        val wire = runCatching { TagMapper.toWire(tag, handle, skipNdef = false) }.getOrNull() ?: return
+        val wire = try {
+            TagMapper.toWire(tag, handle, skipNdef = false)
+        } catch (e: Throwable) {
+            // Reported rather than dropped. This path has no session behind it, so an app that
+            // never hears about the tap has nothing at all to go on.
+            Log.e(TAG, "could not read a tag delivered by intent", e)
+            reportError(TagMapper.errorCode(e), "Tag from intent could not be read: ${e.message}")
+            return
+        }
 
         // An NDEF intent already carries the message the system read, so a tag that has
         // since left the field still delivers its content.

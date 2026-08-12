@@ -15,6 +15,7 @@ import android.nfc.tech.NfcB
 import android.nfc.tech.NfcBarcode
 import android.nfc.tech.NfcF
 import android.nfc.tech.NfcV
+import android.util.Log
 import java.io.IOException
 
 /**
@@ -26,6 +27,25 @@ import java.io.IOException
  */
 internal object TagMapper {
 
+    private const val TAG = "NfcUtilPlugin"
+
+    /**
+     * Describes one technology, or nothing at all if it cannot be described.
+     *
+     * Every getter on `android.nfc.tech` is unannotated Java, so Kotlin types it as a
+     * platform type and inserts no null check -- and the values really are absent sometimes.
+     * AOSP fills the NfcA and NfcB extras only once the poll bytes are long enough, and a
+     * B-prime target answers no SENSB_RES at all while still being reported as ISO 14443-3B.
+     * Feeding one of those into a non-null generated field throws, and without this the throw
+     * took down the whole [TagPigeon]: an app that only wanted the UID, or an IsoDep
+     * exchange, got no tag at all.
+     */
+    private inline fun <T> describe(name: String, block: () -> T?): T? =
+        runCatching(block).getOrElse {
+            Log.w(TAG, "could not describe $name on this tag; reporting the rest", it)
+            null
+        }
+
     /** Builds the wire tag, reading every technology the tag answers to. */
     fun toWire(tag: Tag, handle: String, skipNdef: Boolean): TagPigeon {
         val techList = tag.techList.map { it.substringAfterLast('.') }
@@ -34,34 +54,34 @@ internal object TagMapper {
             handle = handle,
             id = tag.id,
             techList = techList,
-            ndefAndroid = if (skipNdef) null else Ndef.get(tag)?.let(::ndefToWire),
+            ndefAndroid = if (skipNdef) null else describe("Ndef") { Ndef.get(tag)?.let(::ndefToWire) },
             // NdefFormatable has no state worth reporting; whether the tag answers to it is
             // the whole fact.
             ndefFormatable = NdefFormatable.get(tag) != null,
-            nfcA = NfcA.get(tag)?.let {
+            nfcA = describe("NfcA") { NfcA.get(tag)?.let {
                 NfcAPigeon(
                     atqa = it.atqa,
                     sak = it.sak.toLong(),
                     maxTransceiveLength = it.maxTransceiveLength.toLong(),
                     timeout = it.timeout.toLong(),
                 )
-            },
-            nfcB = NfcB.get(tag)?.let {
+            } },
+            nfcB = describe("NfcB") { NfcB.get(tag)?.let {
                 NfcBPigeon(
                     applicationData = it.applicationData,
                     protocolInfo = it.protocolInfo,
                     maxTransceiveLength = it.maxTransceiveLength.toLong(),
                 )
-            },
-            nfcF = NfcF.get(tag)?.let {
+            } },
+            nfcF = describe("NfcF") { NfcF.get(tag)?.let {
                 NfcFPigeon(
                     manufacturer = it.manufacturer,
                     systemCode = it.systemCode,
                     maxTransceiveLength = it.maxTransceiveLength.toLong(),
                     timeout = it.timeout.toLong(),
                 )
-            },
-            nfcV = NfcV.get(tag)?.let {
+            } },
+            nfcV = describe("NfcV") { NfcV.get(tag)?.let {
                 NfcVPigeon(
                     // Masked, not just widened: android.nfc.tech.NfcV reports these as signed
                     // bytes, so a DSFID of 0xA5 would otherwise reach Dart as -91 while iOS
@@ -70,8 +90,8 @@ internal object TagMapper {
                     responseFlags = it.responseFlags.toLong() and 0xFF,
                     maxTransceiveLength = it.maxTransceiveLength.toLong(),
                 )
-            },
-            isoDep = IsoDep.get(tag)?.let {
+            } },
+            isoDep = describe("IsoDep") { IsoDep.get(tag)?.let {
                 IsoDepPigeon(
                     hiLayerResponse = it.hiLayerResponse,
                     historicalBytes = it.historicalBytes,
@@ -79,8 +99,8 @@ internal object TagMapper {
                     maxTransceiveLength = it.maxTransceiveLength.toLong(),
                     timeout = it.timeout.toLong(),
                 )
-            },
-            mifareClassic = MifareClassic.get(tag)?.let {
+            } },
+            mifareClassic = describe("MifareClassic") { MifareClassic.get(tag)?.let {
                 MifareClassicPigeon(
                     type = when (it.type) {
                         MifareClassic.TYPE_CLASSIC -> MifareClassicTypePigeon.CLASSIC
@@ -94,8 +114,8 @@ internal object TagMapper {
                     maxTransceiveLength = it.maxTransceiveLength.toLong(),
                     timeout = it.timeout.toLong(),
                 )
-            },
-            mifareUltralight = MifareUltralight.get(tag)?.let {
+            } },
+            mifareUltralight = describe("MifareUltralight") { MifareUltralight.get(tag)?.let {
                 MifareUltralightPigeon(
                     type = when (it.type) {
                         MifareUltralight.TYPE_ULTRALIGHT -> MifareUltralightTypePigeon.ULTRALIGHT
@@ -105,8 +125,8 @@ internal object TagMapper {
                     maxTransceiveLength = it.maxTransceiveLength.toLong(),
                     timeout = it.timeout.toLong(),
                 )
-            },
-            nfcBarcode = NfcBarcode.get(tag)?.let {
+            } },
+            nfcBarcode = describe("NfcBarcode") { NfcBarcode.get(tag)?.let {
                 NfcBarcodePigeon(
                     type = when (it.type) {
                         NfcBarcode.TYPE_KOVIO -> NfcBarcodeTypePigeon.KOVIO
@@ -114,7 +134,7 @@ internal object TagMapper {
                     },
                     barcode = it.barcode,
                 )
-            },
+            } },
         )
     }
 
@@ -214,6 +234,9 @@ internal object TagMapper {
      * the command" indistinguishable -- and those call for opposite responses from an app.
      */
     fun errorCode(e: Throwable): AndroidErrorCodePigeon = when (e) {
+        // A null from an unannotated android.nfc getter is a defect in this plugin's mapping,
+        // not a device error, so it does not get to hide in the same bucket as one.
+        is NullPointerException -> AndroidErrorCodePigeon.UNSUPPORTED_TECH
         is TagLostException -> AndroidErrorCodePigeon.TAG_LOST
         is SecurityException -> AndroidErrorCodePigeon.SECURITY
         is IOException -> AndroidErrorCodePigeon.IO

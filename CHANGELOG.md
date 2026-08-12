@@ -157,6 +157,23 @@ See the README for the complete 2.2.0 mapping table.
   one-byte length fields on the wire; 2.2.0 wrote the low byte and produced a message that
   neither this package nor the platform could read back.
 
+* **One unreadable technology no longer costs the whole tag on Android.** Every getter on
+  `android.nfc.tech` is unannotated Java, and some of the values really are absent: AOSP
+  fills the NfcA and NfcB poll-byte extras only once they are long enough, and a B-prime
+  target -- Innovatron, legacy Calypso transit -- answers no SENSB_RES at all while still
+  being reported as ISO 14443-3B. Reading one of those threw while describing the tag, and
+  the tag was dropped entire: an app that only wanted the UID, or an IsoDep exchange, was
+  handed nothing and told only `unknown`. Each technology is now described independently, so
+  a technology that cannot be read is absent while the rest of the tag arrives.
+
+  `NfcA.atqa`, `NfcB.applicationData`, `NfcB.protocolInfo`, `NfcF.manufacturer` and
+  `NfcF.systemCode` are nullable accordingly. Empty would have been a lie: it is not "the tag
+  answered nothing", it is "the platform never told us".
+
+* **A tag delivered by intent that cannot be read is reported rather than dropped.** That
+  path has no session behind it, so an app that never hears about the tap had nothing at all
+  to go on.
+
 * **Reader mode on a switched-off adapter fails instead of starting.** It used to begin
   without error and then discover nothing, which is indistinguishable from a tag never being
   presented. Reported as `adapterDisabled`.
@@ -186,7 +203,7 @@ See the README for the complete 2.2.0 mapping table.
 
 ### Tests
 
-132 in total, up from 57: 101 Dart (was 51), 19 Swift (2.2.0 shipped only the generated
+134 in total, up from 57: 103 Dart (was 51), 19 Swift (2.2.0 shipped only the generated
 template, which did not compile), 11 Kotlin (was 5), plus the example's widget test on both
 sides. Among them: the handler stack over all three start interleavings, byte narrowing at
 its boundaries, the type and identifier length refusal, and a smart poster whose real
