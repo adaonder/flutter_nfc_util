@@ -41,7 +41,7 @@ await NfcUtil.instance.startSession(
 
 ```yaml
 dependencies:
-  nfc_util: ^3.0.1
+  nfc_util: ^3.1.1
 ```
 
 Requires Flutter 3.44, Android API 24, iOS 15.6.

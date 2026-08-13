@@ -1,3 +1,37 @@
+## 3.1.1
+
+The plugin itself is byte for byte what 3.1.0 shipped. Everything here is the example app
+and the checks around it, so **an app that does not open `example/` has no reason to
+upgrade** -- nothing it depends on changed.
+
+The one entry worth reading is the first: on Flutter 3.47 and newer the example would not
+build for Android at all, which is a bad first impression for anyone evaluating the package.
+
+* **The example app builds again on current Flutter.** *(Fix -- anyone building `example/`
+  for Android on Flutter 3.47 or newer. Nothing to change if you only depend on the plugin.)*
+  Flutter 3.47 raised the minimum Gradle it accepts to 8.14.0, and the example still shipped
+  the 8.13 wrapper, so `flutter build apk` stopped with "Your project's Gradle version is
+  lower than Flutter's minimum supported version" before compiling anything. The wrapper now
+  asks for Gradle 8.14.3, which older Flutter versions accept too. The plugin's own Android
+  build was never affected: it uses the host app's wrapper, not this one.
+
+* **The example demonstrates the package without a tag, and says what it is doing while it
+  waits for one.** *(Internal -- only affects people reading or running `example/`.)*
+  "Build & decode NDEF" builds a message with all five record types and decodes it again in
+  pure Dart, so the example is no longer a screen of greyed-out buttons on a simulator. A
+  running session shows a progress strip and a sentence, which on Android was previously
+  invisible; "Stop session" appears only while one is running; the log reads in the order it
+  was written, colours failures and can be copied whole; a blank tag is formatted with
+  `NdefFormatable.format` instead of being reported as unwritable; and "Inspect tag" probes
+  every typed view each platform offers, including `Iso15693`, which was missing entirely.
+  The app is now called "NFC Util" on the home screen instead of `nfc_util_example`.
+
+Also not visible to an app: `pub publish --dry-run` moved out of the per-push CI job, because
+it fails a build over warnings that say nothing about the code, and the workflow's actions
+were bumped off the deprecated Node 20 runtime. The example's widget tests go from one to two
+-- the second drives the NDEF codec end to end, which is the only part of the app a test can
+reach with no platform behind it.
+
 ## 3.1.0
 
 Four bugs, and all four failed the same way: something went wrong and the app was never told.
@@ -54,17 +88,6 @@ failure is just loud now instead of silent. Those are the last two entries below
   corrupted the extra without a word. Zero to `0x7fffffff` milliseconds is accepted. Applies to
   `presenceCheckDelayAndroid` on `NfcUtil.startSession` and to `presenceCheckDelay` on
   `NfcUtilAndroid.enableReaderMode`.
-
-* **The example app now demonstrates the package without a tag, and says what it is doing
-  while it waits for one.** *(Internal -- nothing in the plugin changed; this only affects
-  people reading or running `example/`.)* "Build & decode NDEF" builds a message with all
-  five record types and decodes it again in pure Dart, so the example is no longer a screen
-  of greyed-out buttons on a simulator. A running session now shows a progress strip and a
-  sentence, which on Android was previously invisible; "Stop session" is offered only while
-  one is running; the log reads in the order it was written, colours failures and can be
-  copied whole; a blank tag is formatted with `NdefFormatable.format` instead of being
-  reported as unwritable; and "Inspect tag" probes every typed view each platform offers,
-  including `Iso15693`, which was missing entirely.
 
 None of the rest is visible to an app. `analysis_options.yaml` now declares the formatter
 settings the sources are actually written at -- `page_width` 120 and `trailing_commas` preserve

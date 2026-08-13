@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'nfc_util'
-  s.version          = '3.0.1'
+  s.version          = '3.1.1'
   s.summary          = 'A Flutter plugin providing access to NFC features on Android and iOS.'
   s.description      = <<-DESC
 A Flutter plugin providing access to NFC features on Android and iOS, covering NDEF plus the
