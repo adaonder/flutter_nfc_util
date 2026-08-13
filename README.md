@@ -112,6 +112,18 @@ import 'package:nfc_util/ios.dart' as ios;         // CoreNFC
 Nothing is hidden behind the cross-platform façade: `NfcUtil` is a thin adapter, and
 `NfcUtilAndroid` / `NfcUtilIos` are always reachable for what it does not express.
 
+**If your app has its own `NfcUtil`** — a wrapper named after the thing it wraps is the
+obvious name on both sides of the import — the result is not a conflict but a shadow: the
+local declaration wins, and `NfcUtil.instance` fails with *"The getter 'instance' isn't
+defined for the type 'NfcUtil'"*. Import the package under a prefix:
+
+```dart
+import 'package:nfc_util/nfc_util.dart' as nfc;
+
+if (await nfc.NfcUtil.instance.checkAvailability() != nfc.NfcAvailability.enabled) return;
+await nfc.NfcUtil.instance.startSession(onDiscovered: (tag) async { /* ... */ });
+```
+
 ## Sessions
 
 ```dart
