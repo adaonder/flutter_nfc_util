@@ -286,7 +286,7 @@ framework, so the plugin class itself is covered by review rather than by tests.
 
 ## 2.2.0
 
-The rest of the `nfc_util` 4.x catch-up. Android-only additions; nothing is breaking.
+The rest of the Android platform-API catch-up. Android-only additions; nothing is breaking.
 
 ### Added
 
@@ -296,13 +296,11 @@ The rest of the `nfc_util` 4.x catch-up. Android-only additions; nothing is brea
   current state. On iOS it never emits — there is no NFC toggle to watch.
 
   The receiver is registered against the application context, so a configuration change does
-  not churn it, and it is unregistered on activity and engine detach. (Upstream registers an
-  equivalent receiver and never unregisters it, leaking one per attach cycle.)
+  not churn it, and it is unregistered on activity and engine detach.
 
 * **`NfcBarcode`** tag class and the **`startSession(discoverNfcBarcode:)`** flag that makes
   it reachable. Barcode (Kovio) tags are only discovered when `FLAG_READER_NFC_BARCODE` is
-  set, so the flag is the point — `nfc_util` ships the tag class but never sets the flag
-  from `startSession`, leaving the class unreachable through its own API. The class carries
+  set, so the flag is the point — without it the tag class can never be reached. The class carries
   `identifier`, `barcodeType` and `barcode`, and has no operations, because
   `android.nfc.tech.NfcBarcode` has none.
 
@@ -317,13 +315,12 @@ The rest of the `nfc_util` 4.x catch-up. Android-only additions; nothing is brea
   geometry is not uniform — a 4K card has 32 sectors of 4 blocks followed by 8 of 16 — so
   this arithmetic cannot be done by hand from `blockCount` and `sectorCount`. These resolve
   the technology without opening a connection, since they read a static description rather
-  than talking to the tag. (Upstream implements all three natively but never exposed them in
-  Dart, so they are unreachable there.)
+  than talking to the tag.
 
 ## 2.1.0
 
-Catches up with the useful parts of `nfc_util` 4.x. Nothing here is breaking: existing
-code compiles and behaves as it did.
+Catches up with the useful parts of the Android and CoreNFC platform APIs. Nothing here is
+breaking: existing code compiles and behaves as it did.
 
 ### Added
 
@@ -357,8 +354,7 @@ code compiles and behaves as it did.
 * **`startSession(noPlatformSounds:)`** (Android). `FLAG_READER_NO_PLATFORM_SOUNDS` was
   applied unconditionally, so the system tag-discovery sound could never play and there was
   no way to ask for it. It is now a parameter. **It defaults to `true`**, matching what every
-  release before this one did — note this is the opposite of `nfc_util`, which defaults
-  it to `false`. Pass `noPlatformSounds: false` to let the sound play.
+  release before this one did. Pass `noPlatformSounds: false` to let the sound play.
 
 * **`Ndef.canMakeReadOnly`** (Android). The native side already reported this value; it was
   only reachable by digging through `additionalData`. It is now a proper field, and no
