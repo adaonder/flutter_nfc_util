@@ -1,8 +1,35 @@
+// The nfc_util example.
+//
+// Every button maps to one method on the package, and the code for it sits under the
+// ACTIONS banner below in the same order the buttons appear:
+//
+//   Build & decode NDEF -> NdefMessage.toBytes / fromBytes   (no tag, no radio)
+//   Read                -> NfcUtil.startSession + Ndef.from(tag)
+//   Write text          -> Ndef.write / NdefFormatable.format
+//   Write poster        -> SmartPosterRecord.create
+//   Inspect tag         -> every X.from(tag) the running platform offers
+//   Scan many           -> invalidateAfterFirstReadIos: false
+//   Barcode  (Android)  -> discoverNfcBarcodeAndroid: true
+//   Emulate card (Android) -> HostCardEmulation  (changes persistent device state)
+//   Wallet pass (iOS)   -> NfcUtilIos.vasSessionBegin
+//
+// The four imports below are the package's four public libraries; nothing else is needed.
+//
+// [_session] is the only place this file calls `NfcUtil.startSession`, and it spells every
+// parameter the way the package spells it: delete the underscore and you have the real
+// call. It and [_write] are the only two abstractions the demo invents.
+//
+// What makes this run is not all in Dart. The manifest entries, the Info.plist keys and the
+// entitlement live in android/app/src/main/AndroidManifest.xml, ios/Runner/Info.plist and
+// ios/Runner/Runner.entitlements, each commented in place.
+
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:nfc_util/android.dart' as android;
 import 'package:nfc_util/ios.dart' as ios;
 import 'package:nfc_util/ndef.dart';
@@ -15,10 +42,38 @@ class ExampleApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'nfc_util',
-    theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+    title: 'NFC Util',
+    theme: _theme(Brightness.light),
+    darkTheme: _theme(Brightness.dark),
     home: const HomePage(),
   );
+
+  /// Compact buttons, because up to nine actions have to sit above the log without
+  /// crowding it. The tap target keeps its default minimum -- only the visual box shrinks.
+  static ThemeData _theme(Brightness brightness) {
+    final base = ThemeData(colorSchemeSeed: Colors.indigo, brightness: brightness);
+    const style = ButtonStyle(
+      visualDensity: VisualDensity.compact,
+      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 14)),
+    );
+    return base.copyWith(
+      filledButtonTheme: const FilledButtonThemeData(style: style),
+      outlinedButtonTheme: const OutlinedButtonThemeData(style: style),
+    );
+  }
+}
+
+/// Thrown when the tag is the problem rather than the code.
+///
+/// The message is written for a person, because it is what reaches the iOS system sheet.
+/// Everything else that goes wrong is a bug and reaches the log instead.
+class TagProblem implements Exception {
+  const TagProblem(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class HomePage extends StatefulWidget {
@@ -29,9 +84,24 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final _log = <String>[];
+  /// Oldest first, so an indented child line reads under the parent that wrote it.
+  final _log = <({String text, bool isError})>[];
+
+  /// A continuous scan would otherwise append for as long as it runs.
+  static const int _logLimit = 300;
+
   NfcAvailability? _availability;
   StreamSubscription<NfcAdapterState>? _adapterState;
+
+  /// Null while idle; otherwise the sentence the busy strip shows.
+  ///
+  /// One field rather than a state enum: the package does not expose a session phase, and
+  /// inventing one here would teach a model that does not exist. Four places clear it --
+  /// [_stopSession], the start-failure catch, [_onSessionError] once the session is over,
+  /// and the body-throw path, which routes through [_stopSession].
+  String? _busy;
+
+  bool _emulating = false;
 
   bool get _isAndroid => !kIsWeb && Platform.isAndroid;
   bool get _isIos => !kIsWeb && Platform.isIOS;
@@ -48,18 +118,23 @@ class _HomePageState extends State<HomePage> {
       });
       // A tag can launch the app; see the README for the manifest this needs.
       android.NfcUtilAndroid.instance.onTagFromIntent = (tag) async => _write('intent tag: $tag');
-      _checkInitialTag();
     }
 
     if (_isIos) {
       ios.NfcUtilIos.instance.onNdefFromBackground = (message) =>
           _write('background NDEF: ${message.records.length} records');
     }
+
+    _checkLaunchTag();
   }
 
   @override
   void dispose() {
     _adapterState?.cancel();
+    // registerAids changed state that survives the process being killed, the phone
+    // rebooting and the app being updated, and unregisterAids is the only way back. Best
+    // effort only: a hard kill still leaves the device enrolled.
+    if (_emulating) unawaited(_stopCardEmulation(quiet: true));
     super.dispose();
   }
 
@@ -68,101 +143,159 @@ class _HomePageState extends State<HomePage> {
     if (mounted) setState(() => _availability = availability);
   }
 
-  Future<void> _checkInitialTag() async {
-    final tag = await android.NfcUtilAndroid.instance.takeInitialTag();
-    if (tag != null) _write('app was launched by tag: $tag');
+  /// The two ways a tag can reach an app that was not running, one per platform.
+  ///
+  /// Both are read outside any session, which is why they hand back the tag's discovery
+  /// snapshot rather than a live handle.
+  Future<void> _checkLaunchTag() async {
+    if (_isAndroid) {
+      final tag = await android.NfcUtilAndroid.instance.takeInitialTag();
+      if (tag != null) {
+        _write('launched by tag: $tag');
+        final cached = Ndef.from(tag)?.cachedMessage;
+        if (cached != null) _write('  it held ${cached.records.length} records');
+      }
+    }
+
+    if (_isIos) {
+      final message = await ios.NfcUtilIos.instance.takeInitialNdefMessage();
+      if (message != null) _write('launched by an NDEF tag holding ${message.records.length} records');
+    }
   }
 
-  void _write(String line) {
+  void _write(String line, {bool isError = false}) {
     if (!mounted) return;
-    setState(() => _log.insert(0, line));
+    setState(() {
+      _log.add((text: line, isError: isError));
+      if (_log.length > _logLimit) _log.removeRange(0, _log.length - _logLimit);
+    });
   }
 
   void _clear() => setState(_log.clear);
 
-  /// Runs [body] inside a session, reporting whatever it throws instead of losing it.
-  Future<void> _session(Future<void> Function(NfcTag tag) body, {String? alertMessage}) async {
+  Future<void> _copyAll() async {
+    await Clipboard.setData(ClipboardData(text: _log.map((entry) => entry.text).join('\n')));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Log copied')));
+    }
+  }
+
+  void _setBusy(String label) {
+    if (mounted) setState(() => _busy = label);
+  }
+
+  void _setIdle() {
+    if (mounted) setState(() => _busy = null);
+  }
+
+  // -------------------------------------------------------------------------------------
+  // THE SESSION
+  // -------------------------------------------------------------------------------------
+
+  /// The one place this example calls [NfcUtil.startSession].
+  ///
+  /// Every forwarded parameter is spelled the way the package spells it, so a call here is
+  /// the real call with an underscore in front of it. Copy the body, not the wrapper.
+  ///
+  /// Do the tag I/O inside `onDiscovered`. The native handle is released as soon as that
+  /// future completes, so a tag kept for a later screen fails; `tag.id`, `tag.techList` and
+  /// `Ndef.from(tag)?.cachedMessage` are the parts that outlive the callback.
+  ///
+  /// Stopping is deliberately *not* done here. On iOS `invalidateAfterFirstReadIos` ends the
+  /// session for you; on Android nothing does but an explicit `stopSession`, and hiding that
+  /// difference behind one flag would hide the thing most worth seeing.
+  Future<void> _session({
+    required String busyLabel,
+    required Future<void> Function(NfcTag tag) onDiscovered,
+    Set<NfcPollingOption>? pollingOptions,
+    bool skipNdefCheck = false,
+    bool invalidateAfterFirstReadIos = true,
+    bool discoverNfcBarcodeAndroid = false,
+    String? alertMessageIos,
+  }) async {
+    _setBusy(busyLabel);
     try {
       await NfcUtil.instance.startSession(
-        alertMessageIos: alertMessage ?? 'Hold your phone near a tag',
+        pollingOptions: pollingOptions,
+        skipNdefCheck: skipNdefCheck,
+        invalidateAfterFirstReadIos: invalidateAfterFirstReadIos,
+        discoverNfcBarcodeAndroid: discoverNfcBarcodeAndroid,
+        alertMessageIos: alertMessageIos ?? 'Hold your phone near a tag',
+        onBecameActiveIos: () => _setBusy('Hold a tag to the phone'),
         onDiscovered: (tag) async {
           try {
-            await body(tag);
-            await NfcUtil.instance.stopSession(alertMessageIos: 'Done');
-          } on Object catch (e) {
-            _write('failed: $e');
-            await NfcUtil.instance.stopSession(errorMessageIos: '$e');
+            await onDiscovered(tag);
+          } on Exception catch (e) {
+            _write('failed: $e', isError: true);
+            // A TagProblem was written for the person holding the phone; anything else was
+            // not, so it must not reach the system sheet.
+            await _stopSession(errorMessageIos: e is TagProblem ? e.message : 'Could not read this tag');
           }
         },
-        // Both platforms raise this now; in 2.x only iOS did.
-        onError: (error) async => _write('session ended: $error'),
+        onError: _onSessionError,
       );
-    } on Object catch (e) {
-      _write('could not start: $e');
+    } on PlatformException catch (e) {
+      _setIdle();
+      _reportStartFailure(e);
     }
   }
 
-  // -------------------------------------------------------------------------------------
-  // Actions
-  // -------------------------------------------------------------------------------------
-
-  Future<void> _readTag() => _session((tag) async {
-    _write('tag: $tag');
-
-    final ndef = Ndef.from(tag);
-    if (ndef == null) {
-      _write('  not an NDEF tag');
-      return;
-    }
-
-    _write('  writable: ${ndef.isWritable}, capacity: ${ndef.maxSize}');
-    final message = await ndef.read();
-    if (message == null) {
-      _write('  nothing written yet');
-      return;
-    }
-
-    for (final record in message.records) {
-      _write('  ${_describe(record)}');
-    }
-  });
-
-  /// Shows the typed record views: each one both builds and parses.
-  String _describe(NdefRecord record) {
-    final text = TextRecord.from(record);
-    if (text != null) return 'text[${text.languageCode}]: ${text.text}';
-
-    final uri = UriRecord.from(record);
-    if (uri != null) return 'uri: ${uri.uri}';
-
-    final poster = SmartPosterRecord.from(record);
-    if (poster != null) return 'poster: ${poster.title()} -> ${poster.uri}';
-
-    final mime = MimeRecord.from(record);
-    if (mime != null) return 'mime ${mime.mimeType}: ${mime.data.length} bytes';
-
-    final external = ExternalRecord.from(record);
-    if (external != null) return 'external ${external.domain}:${external.type}';
-
-    return '${record.typeNameFormat.name}: ${record.payload.length} bytes';
+  /// `stopSession` never throws and is safe to call twice. The busy label is this app's own
+  /// bookkeeping, so it is cleared here rather than by the package.
+  Future<void> _stopSession({String? alertMessageIos, String? errorMessageIos}) async {
+    await NfcUtil.instance.stopSession(alertMessageIos: alertMessageIos, errorMessageIos: errorMessageIos);
+    _setIdle();
   }
 
-  Future<void> _writeText() => _session((tag) async {
-    final ndef = Ndef.from(tag);
-    if (ndef == null || !ndef.isWritable) {
-      throw 'Tag is not NDEF writable';
-    }
-    await ndef.write(NdefMessage([TextRecord.create('merhaba dünya', languageCode: 'tr')]));
-    _write('wrote a text record');
-  }, alertMessage: 'Hold still while writing');
+  /// [NfcError.sessionEnded] is the field that decides whether starting again is safe.
+  ///
+  /// Every CoreNFC failure ends the session. On Android a tag that could not be read leaves
+  /// reader mode polling, and a session started on top of that one is refused.
+  Future<void> _onSessionError(NfcError error) async {
+    final code = error.iosCode?.name ?? error.androidCode?.name ?? 'unclassified';
 
-  /// A smart poster is one record holding a URI, a title and an action, with a nested NDEF
-  /// message as its payload. This is what a printed NFC poster carries.
-  Future<void> _writeSmartPoster() => _session((tag) async {
-    final ndef = Ndef.from(tag);
-    if (ndef == null || !ndef.isWritable) throw 'Tag is not NDEF writable';
+    if (!error.sessionEnded) {
+      _write('error, still polling [${error.source.name}/$code] ${error.message}');
+      if (error.androidCode == NfcAndroidErrorCode.tagLost) {
+        _write('  hold the tag still -- do not start another session');
+      }
+      return;
+    }
+
+    // A dismissed sheet is a decision, not a fault.
+    final cancelled = error.iosCode == NfcReaderErrorCode.userCanceled;
+    _write('session ended [${error.source.name}/$code] ${error.message}', isError: !cancelled);
+    _setIdle();
+  }
+
+  /// The three codes a refused start can carry. They are constants rather than literals
+  /// precisely so this switch can be written.
+  void _reportStartFailure(PlatformException e) => _write(switch (e.code) {
+    NfcErrorCodes.sessionAlreadyExists =>
+      'A session is already running. Stop it first -- both platforms refuse to replace one.',
+    NfcErrorCodes.unavailable => 'The platform refused: no radio, or NFC is switched off.',
+    NfcErrorCodes.noActivity => 'Android has no activity attached right now.',
+    _ => 'startSession failed [${e.code}] ${e.message}',
+  }, isError: true);
+
+  // -------------------------------------------------------------------------------------
+  // ACTIONS
+  // -------------------------------------------------------------------------------------
+
+  /// Pure Dart: no tag, no session, no radio, so this one runs on a simulator.
+  ///
+  /// This is the whole NDEF wire format. It is also how a payload is built for anything
+  /// else that carries NDEF, host card emulation included.
+  void _codecRoundTrip() {
+    _write('-- Build & decode NDEF --');
 
     final message = NdefMessage([
+      TextRecord.create('merhaba dünya', languageCode: 'tr'),
+      // create abbreviates the longest matching scheme, so 'https://' costs one byte
+      // instead of eight.
+      UriRecord.create(Uri.parse('https://pub.dev/packages/nfc_util')),
+      MimeRecord.create('application/json', utf8.encode('{"seat":"14A"}')),
+      ExternalRecord.create('example.com', 'seat', Uint8List.fromList([0x0E, 0x41])),
       SmartPosterRecord.create(
         uri: Uri.parse('https://pub.dev/packages/nfc_util'),
         title: 'nfc_util',
@@ -170,119 +303,243 @@ class _HomePageState extends State<HomePage> {
       ),
     ]);
 
-    if (message.byteLength > ndef.maxSize) {
-      throw 'Message is ${message.byteLength} bytes, tag holds ${ndef.maxSize}';
+    final bytes = message.toBytes();
+    _write('  toBytes() -> ${bytes.length} bytes, byteLength said ${message.byteLength}');
+
+    final decoded = NdefMessage.fromBytes(bytes);
+    _write('  fromBytes(bytes) == message -> ${decoded == message}', isError: decoded != message);
+    for (final record in decoded.records) {
+      _write('  ${_describe(record)}');
     }
-    await ndef.write(message);
-    _write('wrote a smart poster (${message.byteLength} bytes)');
-  });
+  }
 
-  /// Exercises the platform tag classes on whichever platform is running.
-  Future<void> _tagIo() => _session((tag) async {
-    _write('tag: $tag');
+  Future<void> _readTag() => _session(
+    busyLabel: 'Waiting for a tag to read',
+    onDiscovered: (tag) async {
+      _write('-- Read --');
+      _write('tag: $tag');
 
-    if (_isAndroid) {
-      final classic = android.MifareClassic.from(tag);
-      if (classic != null) {
-        _write('  MifareClassic ${classic.type.name}, ${classic.sectorCount} sectors, ${classic.size} bytes');
-        // The factory default key; a personalised card will refuse it.
-        final key = Uint8List.fromList(List.filled(6, 0xFF));
-        final ok = await classic.authenticateSectorWithKeyA(sectorIndex: 0, key: key);
-        _write('  sector 0 auth with default key: $ok');
-        if (ok) {
-          final block = await classic.sectorToBlock(sectorIndex: 0);
-          _write('  block $block: ${_hex(await classic.readBlock(blockIndex: block))}');
+      final ndef = Ndef.from(tag);
+      if (ndef == null) {
+        _write('  holds no NDEF (or the session set skipNdefCheck)');
+        await _stopSession(alertMessageIos: 'Done');
+        return;
+      }
+
+      _write('  writable: ${ndef.isWritable}, capacity: ${ndef.maxSize}');
+
+      // Discovery already fetched this, so there is no second round trip to the tag.
+      // read() is only worth it when the content may have changed since.
+      final message = ndef.cachedMessage;
+      if (message == null) {
+        _write('  nothing written yet');
+      } else {
+        for (final record in message.records) {
+          _write('  ${_describe(record)}');
         }
       }
 
-      final ultralight = android.MifareUltralight.from(tag);
-      if (ultralight != null) {
-        _write('  MifareUltralight ${ultralight.type.name}');
-        _write('  pages 0-3: ${_hex(await ultralight.readPages(pageOffset: 0))}');
-      }
+      await _stopSession(alertMessageIos: 'Done');
+    },
+  );
 
-      final nfcA = android.NfcA.from(tag);
-      if (nfcA != null) {
-        _write('  NfcA atqa=${_hex(nfcA.atqa)} sak=${nfcA.sak}');
-        _write('  live max transceive: ${await nfcA.getMaxTransceiveLength()}');
-      }
+  Future<void> _writeText() => _session(
+    busyLabel: 'Hold still while writing',
+    alertMessageIos: 'Hold still while writing',
+    onDiscovered: (tag) async {
+      _write('-- Write text --');
+      await _writeMessage(tag, NdefMessage([TextRecord.create('merhaba dünya', languageCode: 'tr')]));
+      await _stopSession(alertMessageIos: 'Written');
+    },
+  );
 
-      final isoDep = android.IsoDep.from(tag);
-      if (isoDep != null) {
-        _write('  IsoDep, extended APDU: ${isoDep.isExtendedLengthApduSupported}');
+  /// A smart poster is one record holding a URI, a title and an action, with a nested NDEF
+  /// message as its payload. This is what a printed NFC poster carries.
+  Future<void> _writeSmartPoster() => _session(
+    busyLabel: 'Hold still while writing',
+    alertMessageIos: 'Hold still while writing',
+    onDiscovered: (tag) async {
+      _write('-- Write poster --');
+      await _writeMessage(
+        tag,
+        NdefMessage([
+          SmartPosterRecord.create(
+            uri: Uri.parse('https://pub.dev/packages/nfc_util'),
+            title: 'nfc_util',
+            action: SmartPosterAction.execute,
+          ),
+        ]),
+      );
+      await _stopSession(alertMessageIos: 'Written');
+    },
+  );
+
+  /// The one write path, shared by both write actions.
+  Future<void> _writeMessage(NfcTag tag, NdefMessage message) async {
+    final ndef = Ndef.from(tag);
+
+    if (ndef == null) {
+      // Not "unwritable": a tag straight out of the packet holds no NDEF yet, so Ndef.from
+      // returns null for it. Android prepares and writes it in one call. CoreNFC has no
+      // equivalent, so this is null on iOS.
+      final formatable = android.NdefFormatable.from(tag);
+      if (formatable == null) {
+        throw const TagProblem('This tag holds no NDEF and cannot be formatted from here.');
       }
+      await formatable.format(message);
+      _write('  formatted a blank tag and wrote ${message.byteLength} bytes');
+      return;
     }
 
-    if (_isIos) {
-      final card = ios.Iso7816.from(tag);
-      if (card != null) {
-        _write('  Iso7816, selected AID ${card.initialSelectedAID}');
-        // SELECT by name, no data: harmless on any card that answers APDUs.
-        final response = await card.sendCommand(
-          instructionClass: 0x00,
-          instructionCode: 0xA4,
-          p1Parameter: 0x04,
-          p2Parameter: 0x00,
-          data: Uint8List(0),
-          expectedResponseLength: 256,
+    if (!ndef.isWritable) throw const TagProblem('This tag is locked read-only.');
+    if (message.byteLength > ndef.maxSize) {
+      throw TagProblem('The message is ${message.byteLength} bytes; this tag holds ${ndef.maxSize}.');
+    }
+
+    await ndef.write(message);
+    // cachedMessage is the discovery snapshot and is stale now, so this is the one place
+    // read() earns its round trip.
+    final written = await ndef.read();
+    _write('  wrote ${message.byteLength} bytes; the tag now holds ${written?.records.length ?? 0} records');
+  }
+
+  /// Every typed view the running platform offers, tried in turn.
+  ///
+  /// Each line is a real `X.from(tag)`; the helper only formats the ones that matched.
+  Future<void> _inspectTag() => _session(
+    busyLabel: 'Waiting for a tag to inspect',
+    onDiscovered: (tag) async {
+      _write('-- Inspect tag --');
+      _write('tag: $tag');
+
+      if (_isAndroid) {
+        _probe('NfcA', android.NfcA.from(tag), (t) async => 'atqa=${_hex(t.atqa)} sak=${t.sak}');
+        _probe('NfcB', android.NfcB.from(tag), (t) async => 'appData=${_hex(t.applicationData)}');
+        _probe('NfcF', android.NfcF.from(tag), (t) async => 'systemCode=${_hex(t.systemCode)}');
+        _probe('NfcV', android.NfcV.from(tag), (t) async => 'dsfId=${t.dsfId} responseFlags=${t.responseFlags}');
+        _probe('NdefAndroid', android.NdefAndroid.from(tag), (t) async {
+          // canMakeReadOnly is the pre-check for Ndef.writeLock(), which is permanent.
+          return '${t.type}, lockable: ${t.canMakeReadOnly}';
+        });
+        _probe('NdefFormatable', android.NdefFormatable.from(tag), (t) async => 'blank, can be formatted');
+
+        await _probeAsync('MifareClassic', android.MifareClassic.from(tag), (t) async {
+          final head = '${t.type.name}, ${t.sectorCount} sectors, ${t.size} bytes';
+          // The factory default key; a personalised card will refuse it.
+          final key = Uint8List.fromList(List.filled(6, 0xFF));
+          final ok = await t.authenticateSectorWithKeyA(sectorIndex: 0, key: key);
+          if (!ok) return '$head; sector 0 refused the default key';
+          final block = await t.sectorToBlock(sectorIndex: 0);
+          return '$head; block $block = ${_hex(await t.readBlock(blockIndex: block))}';
+        });
+
+        await _probeAsync(
+          'MifareUltralight',
+          android.MifareUltralight.from(tag),
+          (t) async => '${t.type.name}, pages 0-3 = ${_hex(await t.readPages(pageOffset: 0))}',
         );
-        _write('  SELECT -> ${response.statusWord.toRadixString(16)} (ok: ${response.isSuccess})');
+
+        await _probeAsync('IsoDep', android.IsoDep.from(tag), (t) async {
+          // SELECT by name with no data: harmless on any card that answers APDUs, and the
+          // Android counterpart of Iso7816.sendCommand below.
+          final response = await t.transceive(Uint8List.fromList([0x00, 0xA4, 0x04, 0x00, 0x00]));
+          return 'extended APDU: ${t.isExtendedLengthApduSupported}, SELECT -> ${_hex(response)}';
+        });
       }
 
-      final mifare = ios.MiFare.from(tag);
-      if (mifare != null) _write('  MiFare family ${mifare.family.name}');
+      if (_isIos) {
+        _probe('MiFare', ios.MiFare.from(tag), (t) async => 'family ${t.family.name}');
+        _probe('FeliCa', ios.FeliCa.from(tag), (t) async => 'IDm ${_hex(t.currentIDm)}');
 
-      final felica = ios.FeliCa.from(tag);
-      if (felica != null) _write('  FeliCa IDm ${_hex(felica.currentIDm)}');
+        await _probeAsync('Iso7816', ios.Iso7816.from(tag), (t) async {
+          final response = await t.sendCommand(
+            instructionClass: 0x00,
+            instructionCode: 0xA4,
+            p1Parameter: 0x04,
+            p2Parameter: 0x00,
+            data: Uint8List(0),
+            expectedResponseLength: 256,
+          );
+          return 'AID ${t.initialSelectedAID}, SELECT -> '
+              '${response.statusWord.toRadixString(16)} (ok: ${response.isSuccess})';
+        });
 
-      final ndefIos = ios.NdefIos.from(tag);
-      if (ndefIos != null) {
-        final live = await ndefIos.queryStatus();
-        _write('  live NDEF status: ${live.status.name}, capacity ${live.capacity}');
+        await _probeAsync('Iso15693', ios.Iso15693.from(tag), (t) async {
+          final info = await t.getSystemInfo(requestFlags: {ios.Iso15693RequestFlag.highDataRate});
+          return 'IC ${t.icManufacturerCode}/${_hex(t.icSerialNumber)}, '
+              '${info.totalBlocks} blocks of ${info.blockSize}';
+        });
+
+        await _probeAsync('NdefIos', ios.NdefIos.from(tag), (t) async {
+          final live = await t.queryStatus();
+          return '${live.status.name}, capacity ${live.capacity}';
+        });
       }
+
+      await _stopSession(alertMessageIos: 'Done');
+    },
+  );
+
+  /// Reports [view] when the tag answered to it, and stays quiet when it did not.
+  void _probe<T>(String name, T? view, Future<String> Function(T) describe) {
+    if (view != null) unawaited(describe(view).then((text) => _write('  $name: $text')));
+  }
+
+  /// The awaited form, for probes that talk to the tag.
+  Future<void> _probeAsync<T>(String name, T? view, Future<String> Function(T) describe) async {
+    if (view == null) return;
+    try {
+      _write('  $name: ${await describe(view)}');
+    } on Exception catch (e) {
+      _write('  $name: matched, but the exchange failed: $e', isError: true);
     }
-  });
+  }
+
+  /// One session, many tags. iOS restarts polling only after `onDiscovered` returns.
+  Future<void> _scanMany() {
+    var count = 0;
+    return _session(
+      busyLabel: 'Scanning -- hold tags to the phone',
+      alertMessageIos: 'Scan as many tags as you like',
+      invalidateAfterFirstReadIos: false,
+      skipNdefCheck: true,
+      // Named explicitly rather than left to the default, because on iOS the default asks
+      // for FeliCa too, and CoreNFC refuses to start a FeliCa session unless
+      // com.apple.developer.nfc.readersession.felica.systemcodes lists the system codes.
+      // The cost of naming it: this action will not discover FeliCa or ISO 15693 tags.
+      pollingOptions: {NfcPollingOption.iso14443},
+      onDiscovered: (tag) async {
+        count++;
+        _write('#$count ${tag.id == null ? "no id" : _hex(tag.id)} (ISO 14443 only)');
+        _setBusy('$count tags scanned');
+        if (_isIos) await ios.NfcUtilIos.instance.tagSessionSetAlertMessage('$count tags scanned');
+      },
+    );
+  }
 
   /// Barcode tags are only ever discovered when the session asks for them.
-  Future<void> _readBarcode() async {
-    try {
-      await NfcUtil.instance.startSession(
-        discoverNfcBarcodeAndroid: true,
-        skipNdefCheck: true,
-        onDiscovered: (tag) async {
-          final barcode = android.NfcBarcode.from(tag);
-          _write(barcode == null ? 'not a barcode tag' : 'barcode ${barcode.type.name}: ${_hex(barcode.barcode)}');
-          await NfcUtil.instance.stopSession();
-        },
-        onError: (error) async => _write('session ended: $error'),
-      );
-    } on Object catch (e) {
-      _write('could not start: $e');
-    }
-  }
+  Future<void> _readBarcode() => _session(
+    busyLabel: 'Waiting for a barcode tag',
+    discoverNfcBarcodeAndroid: true,
+    // Skips the discovery probe, so Ndef.from(tag) would return null -- which is fine here.
+    skipNdefCheck: true,
+    onDiscovered: (tag) async {
+      _write('-- Barcode --');
+      final barcode = android.NfcBarcode.from(tag);
+      _write(barcode == null ? 'not a barcode tag' : 'barcode ${barcode.type.name}: ${_hex(barcode.barcode)}');
+      await _stopSession();
+    },
+  );
 
-  /// One session, many tags: iOS restarts polling only after this callback returns.
-  Future<void> _continuousScan() async {
-    var count = 0;
-    try {
-      await NfcUtil.instance.startSession(
-        invalidateAfterFirstReadIos: false,
-        alertMessageIos: 'Scan as many tags as you like',
-        skipNdefCheck: true,
-        onDiscovered: (tag) async {
-          count++;
-          _write('#$count ${tag.id == null ? "no id" : _hex(tag.id)}');
-          if (_isIos) await ios.NfcUtilIos.instance.tagSessionSetAlertMessage('$count tags scanned');
-        },
-        onError: (error) async => _write('session ended: $error'),
-      );
-    } on Object catch (e) {
-      _write('could not start: $e');
-    }
-  }
-
-  /// Apple Wallet passes rather than NFC tags. iOS only.
+  /// Apple Wallet passes rather than NFC tags. A separate session object from the reader
+  /// one, with its own begin and its own invalidate.
   Future<void> _readWalletPass() async {
+    if (!await ios.NfcUtilIos.instance.vasSessionReadingAvailable()) {
+      _write('VAS is unavailable: it needs the pass-reading entitlement in Runner.entitlements', isError: true);
+      return;
+    }
+
+    _setBusy('Hold your phone near the reader');
     try {
       await ios.NfcUtilIos.instance.vasSessionBegin(
         alertMessage: 'Hold your phone near the reader',
@@ -291,15 +548,27 @@ class _HomePageState extends State<HomePage> {
           ios.VasCommandConfiguration(passTypeIdentifier: 'pass.com.example.loyalty'),
         ],
         onResponse: (responses) {
+          _write('-- Wallet pass --');
           for (final response in responses) {
-            _write('pass ${response.status.name}: ${response.vasData.length} bytes');
+            // vasData is empty unless the status is success, so the byte count only means
+            // something on that branch.
+            final ok = response.status == ios.VasResponseErrorCode.success;
+            _write(
+              ok ? 'pass read: ${response.vasData.length} bytes' : 'pass not read: ${response.status.name}',
+              isError: !ok,
+            );
           }
-          ios.NfcUtilIos.instance.vasSessionInvalidate(alertMessage: 'Done');
+          unawaited(ios.NfcUtilIos.instance.vasSessionInvalidate(alertMessage: 'Done'));
+          _setIdle();
         },
-        onError: (error) async => _write('vas ended: $error'),
+        onError: (error) async {
+          _write('vas ended: ${error.message}', isError: error.iosCode != NfcReaderErrorCode.userCanceled);
+          _setIdle();
+        },
       );
-    } on Object catch (e) {
-      _write('could not start: $e');
+    } on PlatformException catch (e) {
+      _setIdle();
+      _reportStartFailure(e);
     }
   }
 
@@ -308,7 +577,7 @@ class _HomePageState extends State<HomePage> {
     final hce = android.HostCardEmulation.instance;
 
     if (!await hce.isSupported()) {
-      _write('this device cannot emulate a card');
+      _write('this device cannot emulate a card', isError: true);
       return;
     }
 
@@ -321,79 +590,258 @@ class _HomePageState extends State<HomePage> {
     };
     hce.onDeactivated = (reason) => _write('reader gone (reason $reason)');
 
+    // This changes state that outlives the app: the registration survives the process being
+    // killed, the phone rebooting and the app being updated, and unregisterAids is the only
+    // way back. 'F0010203040506' is this example's placeholder -- two apps that both ship it
+    // will collide, and the second registration is the one Android refuses.
     final registered = await hce.registerAids(['F0010203040506']);
+    if (!registered) {
+      _write('AID registration was refused -- another app probably owns it', isError: true);
+      return;
+    }
+
+    _emulating = true;
     await hce.setPreferredService(true);
-    _write(registered ? 'emulating a card: tap a reader' : 'AID registration was refused');
+    _write('emulating a card: tap a reader');
   }
 
-  Future<void> _stopCardEmulation() async {
+  Future<void> _stopCardEmulation({bool quiet = false}) async {
     final hce = android.HostCardEmulation.instance;
     await hce.setPreferredService(false);
-    await hce.unregisterAids();
+    final removed = await hce.unregisterAids();
     hce.onApduReceived = null;
-    _write('card emulation stopped');
+    hce.onDeactivated = null;
+    _emulating = false;
+
+    if (quiet) return;
+    _write(
+      removed
+          ? 'unregistered the AID; the device is no longer enrolled'
+          : 'unregisterAids returned false -- check Settings > Tap & pay',
+      isError: !removed,
+    );
+  }
+
+  /// Shows the typed record views. The build side of the same types is in [_codecRoundTrip].
+  String _describe(NdefRecord record) {
+    final text = TextRecord.from(record);
+    if (text != null) return 'text[${text.languageCode}${text.isUtf16 ? ', utf16' : ''}]: ${text.text}';
+
+    final uri = UriRecord.from(record);
+    if (uri != null) return 'uri: ${uri.uri}';
+
+    final poster = SmartPosterRecord.from(record);
+    if (poster != null) return 'poster: ${poster.title()} -> ${poster.uri} (action ${poster.action?.name ?? 'none'})';
+
+    final mime = MimeRecord.from(record);
+    if (mime != null) return 'mime ${mime.mimeType}: ${mime.data.length} bytes';
+
+    final external = ExternalRecord.from(record);
+    if (external != null) return 'external ${external.domain}:${external.type}';
+
+    return '${record.typeNameFormat.name}: ${record.payload.length} bytes';
   }
 
   static String _hex(Uint8List? bytes) =>
       bytes == null ? '(none)' : bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
 
   // -------------------------------------------------------------------------------------
-  // UI
+  // UI -- app plumbing, not the API
   // -------------------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    final availability = _availability;
-    final ready = availability == NfcAvailability.enabled;
+    final busy = _busy != null;
+    // An action needs the radio and needs the radio free. The codec action needs neither.
+    final ready = _availability == NfcAvailability.enabled && !busy;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('nfc_util'),
-        actions: [IconButton(onPressed: _clear, icon: const Icon(Icons.delete_outline))],
+        title: const Text('NFC Util'),
+        actions: [
+          IconButton(onPressed: _log.isEmpty ? null : _copyAll, icon: const Icon(Icons.copy_all_outlined)),
+          IconButton(onPressed: _log.isEmpty ? null : _clear, icon: const Icon(Icons.delete_outline)),
+        ],
       ),
       body: Column(
         children: [
-          _AvailabilityBanner(availability: availability, onRetry: _refreshAvailability),
+          _AvailabilityBanner(availability: _availability, onRetry: _refreshAvailability),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Wrap(
-              spacing: 8,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                FilledButton(onPressed: ready ? _readTag : null, child: const Text('Read')),
-                FilledButton(onPressed: ready ? _writeText : null, child: const Text('Write text')),
-                FilledButton(onPressed: ready ? _writeSmartPoster : null, child: const Text('Write poster')),
-                FilledButton(onPressed: ready ? _tagIo : null, child: const Text('Tag I/O')),
-                FilledButton(onPressed: ready ? _continuousScan : null, child: const Text('Continuous')),
-                if (_isAndroid) ...[
-                  FilledButton(onPressed: ready ? _readBarcode : null, child: const Text('Barcode')),
-                  FilledButton(onPressed: ready ? _startCardEmulation : null, child: const Text('Emulate card')),
-                  OutlinedButton(onPressed: ready ? _stopCardEmulation : null, child: const Text('Stop emulating')),
-                ],
-                if (_isIos) FilledButton(onPressed: ready ? _readWalletPass : null, child: const Text('Wallet pass')),
-                OutlinedButton(
-                  onPressed: () => NfcUtil.instance.stopSession(),
-                  child: const Text('Stop session'),
+                // Grouped by what the action does to the tag, because that is the
+                // distinction worth seeing before tapping: reading is free, writing is not,
+                // and emulation outlives the app.
+                _ActionGroup(
+                  caption: 'No tag needed',
+                  children: [
+                    // Never gated on availability: it is pure Dart, so it is the one thing
+                    // that works on a simulator or a phone with no NFC.
+                    FilledButton.tonal(
+                      onPressed: busy ? null : _codecRoundTrip,
+                      child: const Text('Build & decode NDEF'),
+                    ),
+                  ],
                 ),
+                _ActionGroup(
+                  caption: 'Read',
+                  children: [
+                    FilledButton(onPressed: ready ? _readTag : null, child: const Text('Read')),
+                    FilledButton(onPressed: ready ? _inspectTag : null, child: const Text('Inspect tag')),
+                    FilledButton(onPressed: ready ? _scanMany : null, child: const Text('Scan many')),
+                    if (_isAndroid) FilledButton(onPressed: ready ? _readBarcode : null, child: const Text('Barcode')),
+                  ],
+                ),
+                _ActionGroup(
+                  caption: 'Write — changes the tag',
+                  children: [
+                    FilledButton(onPressed: ready ? _writeText : null, child: const Text('Write text')),
+                    FilledButton(onPressed: ready ? _writeSmartPoster : null, child: const Text('Write poster')),
+                  ],
+                ),
+                if (_isAndroid)
+                  _ActionGroup(
+                    caption: 'Emulation — changes device state',
+                    children: [
+                      FilledButton(
+                        onPressed: ready && !_emulating ? _startCardEmulation : null,
+                        child: const Text('Emulate card'),
+                      ),
+                      OutlinedButton(
+                        onPressed: _emulating ? () => _stopCardEmulation() : null,
+                        child: const Text('Stop emulating'),
+                      ),
+                    ],
+                  ),
+                if (_isIos)
+                  _ActionGroup(
+                    caption: 'Wallet',
+                    children: [
+                      FilledButton(onPressed: ready ? _readWalletPass : null, child: const Text('Wallet pass')),
+                    ],
+                  ),
               ],
             ),
           ),
-          const Divider(),
-          Expanded(
-            child: _log.isEmpty
-                ? const Center(child: Text('Tap an action, then hold a tag to the phone.'))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _log.length,
-                    itemBuilder: (context, index) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: SelectableText(
-                        _log[index],
-                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                      ),
-                    ),
-                  ),
-          ),
+          // Only while a session is live. Stopping one that never started says nothing, and
+          // putting the control here rather than among the actions is what makes the strip
+          // worth the space: on Android, where there is no system sheet, this band and the
+          // dimmed buttons are the only sign the app heard the tap.
+          if (busy)
+            _BusyStrip(
+              label: _busy!,
+              onStop: () => _stopSession(alertMessageIos: 'Stopped'),
+            ),
+          const Divider(height: 1),
+          Expanded(child: _LogView(entries: _log)),
         ],
+      ),
+    );
+  }
+}
+
+/// One row of related actions under a caption naming what they have in common.
+class _ActionGroup extends StatelessWidget {
+  const _ActionGroup({required this.caption, required this.children});
+
+  final String caption;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 4),
+            child: Text(
+              caption.toUpperCase(),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+          Wrap(spacing: 8, runSpacing: 8, children: children),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown only while a session is running: what the app is waiting for, and the way out.
+class _BusyStrip extends StatelessWidget {
+  const _BusyStrip({required this.label, required this.onStop});
+
+  final String label;
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      const LinearProgressIndicator(minHeight: 2),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
+            TextButton(onPressed: onStop, child: const Text('Stop session')),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+class _LogView extends StatelessWidget {
+  const _LogView({required this.entries});
+
+  final List<({String text, bool isError})> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Tap "Build & decode NDEF" to see the package work without a tag,\n'
+            'or an NFC action and then hold a tag to the phone.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    final errorColor = Theme.of(context).colorScheme.error;
+
+    // reverse: true keeps the newest line in view without a ScrollController, while the
+    // list itself stays oldest-first so indented lines read under their parent.
+    return SelectionArea(
+      child: ListView.builder(
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: entries.length,
+        itemBuilder: (context, index) {
+          final entry = entries[entries.length - 1 - index];
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Text(
+              entry.text,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: entry.isError ? errorColor : null,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -407,22 +855,33 @@ class _AvailabilityBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (message, color) = switch (availability) {
-      NfcAvailability.enabled => ('NFC is on', Colors.green),
+    final scheme = Theme.of(context).colorScheme;
+
+    // Scheme roles rather than fixed colours, so the banner survives the dark theme.
+    final (message, background, foreground) = switch (availability) {
+      NfcAvailability.enabled => ('NFC is on', scheme.primaryContainer, scheme.onPrimaryContainer),
       // Only Android can tell these two apart, which is the point of checkAvailability.
-      NfcAvailability.disabled => ('NFC is off — turn it on in settings', Colors.orange),
-      NfcAvailability.unsupported => ('This device has no NFC', Colors.red),
-      null => ('Checking…', Colors.grey),
+      NfcAvailability.disabled => (
+        'NFC is off -- turn it on in settings',
+        scheme.tertiaryContainer,
+        scheme.onTertiaryContainer,
+      ),
+      NfcAvailability.unsupported => (
+        'No NFC radio here. "Build & decode NDEF" still works.',
+        scheme.errorContainer,
+        scheme.onErrorContainer,
+      ),
+      null => ('Checking…', scheme.surfaceContainerHighest, scheme.onSurfaceVariant),
     };
 
     return Container(
       width: double.infinity,
-      color: color.withValues(alpha: 0.12),
-      padding: const EdgeInsets.all(12),
+      color: background,
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
       child: Row(
         children: [
           Expanded(
-            child: Text(message, style: TextStyle(color: color.shade900)),
+            child: Text(message, style: TextStyle(color: foreground)),
           ),
           TextButton(onPressed: onRetry, child: const Text('Recheck')),
         ],

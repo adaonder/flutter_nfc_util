@@ -55,6 +55,17 @@ failure is just loud now instead of silent. Those are the last two entries below
   `presenceCheckDelayAndroid` on `NfcUtil.startSession` and to `presenceCheckDelay` on
   `NfcUtilAndroid.enableReaderMode`.
 
+* **The example app now demonstrates the package without a tag, and says what it is doing
+  while it waits for one.** *(Internal -- nothing in the plugin changed; this only affects
+  people reading or running `example/`.)* "Build & decode NDEF" builds a message with all
+  five record types and decodes it again in pure Dart, so the example is no longer a screen
+  of greyed-out buttons on a simulator. A running session now shows a progress strip and a
+  sentence, which on Android was previously invisible; "Stop session" is offered only while
+  one is running; the log reads in the order it was written, colours failures and can be
+  copied whole; a blank tag is formatted with `NdefFormatable.format` instead of being
+  reported as unwritable; and "Inspect tag" probes every typed view each platform offers,
+  including `Iso15693`, which was missing entirely.
+
 None of the rest is visible to an app. `analysis_options.yaml` now declares the formatter
 settings the sources are actually written at -- `page_width` 120 and `trailing_commas` preserve
 -- so `dart format` and pana, which scores the package on pub.dev, agree with the code rather
