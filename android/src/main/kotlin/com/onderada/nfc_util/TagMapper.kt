@@ -195,7 +195,8 @@ internal object TagMapper {
             }
         }
         // An empty or unrecognised set would otherwise start a session that can never
-        // discover anything.
+        // discover anything. Dart rejects the empty case before it gets here; this stays as
+        // defence against an older Dart, or anything else, reaching the channel directly.
         if (flags == 0) {
             flags = NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or
                 NfcAdapter.FLAG_READER_NFC_F or NfcAdapter.FLAG_READER_NFC_V

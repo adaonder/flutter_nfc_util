@@ -316,7 +316,11 @@ class Iso15693 {
   static Iso15693? from(NfcTag tag) {
     final data = tag.data.iso15693;
     if (data == null) return null;
-    return Iso15693._(tag.data.handle, icManufacturerCode: data.icManufacturerCode, icSerialNumber: data.icSerialNumber);
+    return Iso15693._(
+      tag.data.handle,
+      icManufacturerCode: data.icManufacturerCode,
+      icSerialNumber: data.icSerialNumber,
+    );
   }
 
   final String _handle;

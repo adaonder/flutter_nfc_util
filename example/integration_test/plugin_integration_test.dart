@@ -27,17 +27,21 @@ void main() {
     await NfcUtil.instance.stopSession();
   }, skip: Platform.isIOS ? 'iOS puts a modal reader sheet up, which blocks the run' : false);
 
-  test('a second startSession is refused rather than replacing the first', () async {
-    await NfcUtil.instance.startSession(onDiscovered: (_) async {});
-    try {
-      await expectLater(
-        NfcUtil.instance.startSession(onDiscovered: (_) async {}),
-        throwsA(isA<Exception>()),
-      );
-    } finally {
-      await NfcUtil.instance.stopSession();
-    }
-  }, skip: Platform.isIOS ? 'iOS puts a modal reader sheet up, which blocks the run' : false);
+  test(
+    'a second startSession is refused rather than replacing the first',
+    () async {
+      await NfcUtil.instance.startSession(onDiscovered: (_) async {});
+      try {
+        await expectLater(
+          NfcUtil.instance.startSession(onDiscovered: (_) async {}),
+          throwsA(isA<Exception>()),
+        );
+      } finally {
+        await NfcUtil.instance.stopSession();
+      }
+    },
+    skip: Platform.isIOS ? 'iOS puts a modal reader sheet up, which blocks the run' : false,
+  );
 
   group('Android', () {
     test('reports the adapter state', () async {

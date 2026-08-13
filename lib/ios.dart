@@ -12,8 +12,7 @@
 /// ```
 library;
 
-export 'src/ios/platform.dart'
-    show NfcUtilIos, VasCommandConfiguration, VasMode, VasResponse, VasResponseErrorCode;
+export 'src/ios/platform.dart' show NfcUtilIos, VasCommandConfiguration, VasMode, VasResponse, VasResponseErrorCode;
 export 'src/ios/tags.dart'
     show
         FeliCa,

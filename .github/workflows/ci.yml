@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dart:
+    name: analyze, format and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: flutter pub get
+      - run: flutter pub get -C example
+
+      # No --line-length here on purpose: the width comes from the `formatter:` block in
+      # analysis_options.yaml, which is also what pana reads when it scores the package. A
+      # flag would check something subtly different from what pub.dev checks.
+      - name: dart format
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter analyze (example)
+        run: flutter analyze --no-pub
+        working-directory: example
+
+      - name: flutter test
+        run: flutter test
+
+      - name: flutter test (example)
+        run: flutter test
+        working-directory: example
+
+      # Catches the things pub.dev deducts points for -- a missing example, an unresolvable
+      # dependency, an oversized archive -- before a release rather than after it.
+      - name: pub publish dry run
+        run: flutter pub publish --dry-run
+
+  # The Kotlin unit tests live in android/src/test but only resolve from the example's Gradle
+  # project: android/settings.gradle declares no `include`, and the example pulls the plugin
+  # in through dev.flutter.flutter-plugin-loader, which needs flutter.sdk in local.properties.
+  # `--config-only` writes that file without building an APK.
+  android:
+    name: kotlin unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: flutter pub get -C example
+      - run: flutter build apk --config-only
+        working-directory: example
+
+      - run: ./gradlew :nfc_util:test --console=plain
+        working-directory: example/android

@@ -421,7 +421,9 @@ class _AvailabilityBanner extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          Expanded(child: Text(message, style: TextStyle(color: color.shade900))),
+          Expanded(
+            child: Text(message, style: TextStyle(color: color.shade900)),
+          ),
           TextButton(onPressed: onRetry, child: const Text('Recheck')),
         ],
       ),

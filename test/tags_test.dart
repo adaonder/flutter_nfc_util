@@ -293,7 +293,10 @@ void main() {
     });
 
     test('maps iOS capacity onto maxSize', () {
-      expect(Ndef.from(tagWith(ndefIos: NdefIosPigeon(status: NdefStatusPigeon.readWrite, capacity: 492)))!.maxSize, 492);
+      expect(
+        Ndef.from(tagWith(ndefIos: NdefIosPigeon(status: NdefStatusPigeon.readWrite, capacity: 492)))!.maxSize,
+        492,
+      );
     });
   });
 

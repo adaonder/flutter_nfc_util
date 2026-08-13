@@ -26,6 +26,20 @@ PollingOptionPigeon pollingOptionToWire(NfcPollingOption value) => switch (value
   NfcPollingOption.iso18092 => PollingOptionPigeon.iso18092,
 };
 
+/// The presence-check delay as the wire wants it: milliseconds that survive the Android
+/// side's narrowing to a 32-bit `Int` before the value reaches the reader-mode Bundle.
+///
+/// Anything outside the range used to arrive as a wrapped-around `Int` -- thirty days
+/// becomes a negative delay -- and corrupted `EXTRA_READER_PRESENCE_CHECK_DELAY` in silence.
+/// [name] is the caller's parameter, so the error names what the app actually passed.
+int presenceCheckDelayToWire(Duration delay, String name) {
+  final millis = delay.inMilliseconds;
+  if (millis < 0 || millis > 0x7fffffff) {
+    throw ArgumentError.value(delay, name, 'must be between zero and 0x7fffffff milliseconds');
+  }
+  return millis;
+}
+
 NfcAdapterState adapterStateFromWire(AdapterStatePigeon value) => switch (value) {
   AdapterStatePigeon.off => NfcAdapterState.off,
   AdapterStatePigeon.turningOn => NfcAdapterState.turningOn,

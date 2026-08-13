@@ -114,6 +114,9 @@ class NfcUtilPlugin :
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        // Not notified, unlike the activity detaches: reportError posts to mainHandler and
+        // flutterApi is nulled a few lines down, so the post would find nothing to send it
+        // on. The isolate that would have received it is going away with the engine.
         teardownSession()
         unregisterAdapterStateReceiver()
         if (NfcUtilApduService.activeBridge === this) NfcUtilApduService.activeBridge = null
@@ -134,7 +137,9 @@ class NfcUtilPlugin :
     }
 
     override fun onDetachedFromActivity() {
-        teardownSession()
+        // Notified: reader mode needs an activity, so the session is over whether or not the
+        // app asked for that. The engine outlives this, so Dart is still there to hear it.
+        teardownSession(notify = true)
         unregisterAdapterStateReceiver()
         activity = null
     }
@@ -147,7 +152,11 @@ class NfcUtilPlugin :
     override fun onDetachedFromActivityForConfigChanges() {
         // Deliberately keeps the receiver: a reattach follows, and the registration is on
         // the application context anyway.
-        teardownSession()
+        //
+        // The session does not survive, though, and the reattach does not bring it back --
+        // so a rotation used to leave the app waiting on a session that had already stopped
+        // polling. Notified for the same reason as onDetachedFromActivity.
+        teardownSession(notify = true)
         activity = null
     }
 
@@ -302,11 +311,35 @@ class NfcUtilPlugin :
         mainHandler.post { flutterApi?.onDiscovered(wire) {} }
     }
 
-    private fun teardownSession() {
+    /**
+     * Brings reader mode down and drops everything the session was holding.
+     *
+     * [notify] tells Dart the session is over. Set it where the *plugin* ended it rather than
+     * the app: Dart's handler stack is only unwound by an `onError` carrying `sessionEnded`,
+     * so without it an activity detach leaves an app believing a session is live while
+     * nothing is polling -- which is the failure the `sessionEnded` contract exists to
+     * prevent.
+     *
+     * The Dart-initiated callers leave it false on purpose. `stopSession` and
+     * `disableReaderMode` have already cleared their own handlers by the time the call gets
+     * here, so an error would be noise about a session the app knows it ended.
+     */
+    private fun teardownSession(notify: Boolean = false) {
+        val wasActive = sessionActive
         sessionActive = false
         activity?.let { runCatching { adapter?.disableReaderMode(it) } }
         closeConnectedTech()
         tags.clear()
+
+        // Only when a session was actually running: a detach with nothing polling has
+        // nothing to report.
+        if (notify && wasActive) {
+            reportError(
+                AndroidErrorCodePigeon.UNKNOWN,
+                "The reader session ended because the activity was detached.",
+                sessionEnded = true,
+            )
+        }
     }
 
     /**

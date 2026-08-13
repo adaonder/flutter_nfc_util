@@ -44,7 +44,13 @@ abstract class _AndroidTagWithTimeout extends _AndroidTag {
 
 /// ISO 14443-3A. Android only.
 class NfcA extends _AndroidTagWithTimeout {
-  const NfcA._(super.handle, {required this.atqa, required this.sak, required this.maxTransceiveLength, required this.timeout});
+  const NfcA._(
+    super.handle, {
+    required this.atqa,
+    required this.sak,
+    required this.maxTransceiveLength,
+    required this.timeout,
+  });
 
   /// Returns an instance for [tag], or null when the tag does not answer to NfcA.
   static NfcA? from(NfcTag tag) {
@@ -80,7 +86,12 @@ class NfcA extends _AndroidTagWithTimeout {
 
 /// ISO 14443-3B. Android only.
 class NfcB extends _AndroidTag {
-  const NfcB._(super.handle, {required this.applicationData, required this.protocolInfo, required this.maxTransceiveLength});
+  const NfcB._(
+    super.handle, {
+    required this.applicationData,
+    required this.protocolInfo,
+    required this.maxTransceiveLength,
+  });
 
   /// Returns an instance for [tag], or null when the tag does not answer to NfcB.
   static NfcB? from(NfcTag tag) {
@@ -330,7 +341,12 @@ enum MifareUltralightType { ultralight, ultralightC, unknown }
 
 /// NXP Mifare Ultralight. Android only; iOS reaches these through [MiFare].
 class MifareUltralight extends _AndroidTagWithTimeout {
-  const MifareUltralight._(super.handle, {required this.type, required this.maxTransceiveLength, required this.timeout});
+  const MifareUltralight._(
+    super.handle, {
+    required this.type,
+    required this.maxTransceiveLength,
+    required this.timeout,
+  });
 
   /// Returns an instance for [tag], or null when the tag is not a Mifare Ultralight.
   static MifareUltralight? from(NfcTag tag) {
@@ -361,8 +377,7 @@ class MifareUltralight extends _AndroidTagWithTimeout {
   final Duration timeout;
 
   /// Reads four pages -- 16 bytes -- starting at [pageOffset].
-  Future<Uint8List> readPages({required int pageOffset}) =>
-      androidApi.mifareUltralightReadPages(_handle, pageOffset);
+  Future<Uint8List> readPages({required int pageOffset}) => androidApi.mifareUltralightReadPages(_handle, pageOffset);
 
   /// Writes one four-byte page.
   Future<void> writePage({required int pageOffset, required Uint8List data}) =>
@@ -428,8 +443,7 @@ class NdefFormatable {
   const NdefFormatable._(this._handle);
 
   /// Returns an instance for [tag], or null when the tag cannot be NDEF-formatted.
-  static NdefFormatable? from(NfcTag tag) =>
-      tag.data.ndefFormatable == true ? NdefFormatable._(tag.data.handle) : null;
+  static NdefFormatable? from(NfcTag tag) => tag.data.ndefFormatable == true ? NdefFormatable._(tag.data.handle) : null;
 
   final String _handle;
 

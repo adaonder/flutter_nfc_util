@@ -1,6 +1,7 @@
 import '../api.dart';
 import '../callbacks.dart';
 import '../common.dart';
+import '../mapping.dart';
 import '../pigeon.g.dart';
 
 /// An `NfcAdapter.FLAG_READER_*` value.
@@ -54,19 +55,28 @@ class NfcUtilAndroid {
   ///
   /// The tag and error callbacks are the session's, so register them the same way
   /// `NfcUtil.startSession` does.
+  ///
+  /// Throws an `ArgumentError`, before the platform is touched, for an empty [flags] or a
+  /// [presenceCheckDelay] outside zero to `0x7fffffff` milliseconds.
   Future<void> enableReaderMode({
     required Set<NfcReaderFlag> flags,
     required Future<void> Function(NfcTag tag) onDiscovered,
     Future<void> Function(NfcError error)? onError,
     Duration presenceCheckDelay = const Duration(milliseconds: 250),
   }) async {
+    // Unlike the cross-platform config, the raw flag list has no fallback on the Android
+    // side: an empty set is passed through as flags `0`, which starts reader mode polling
+    // for nothing at all. This stays a raw escape hatch, so only emptiness is rejected --
+    // which flags make sense together is the caller's business.
+    if (flags.isEmpty) {
+      throw ArgumentError.value(flags, 'flags', 'is empty; reader mode would poll for nothing');
+    }
+    final presenceCheckDelayMillis = presenceCheckDelayToWire(presenceCheckDelay, 'presenceCheckDelay');
+
     final restore = NfcCallbacks.instance.armSession(tag: onDiscovered, error: onError);
 
     try {
-      await androidApi.enableReaderMode(
-        flags.map(_flagToWire).toList(),
-        presenceCheckDelay.inMilliseconds,
-      );
+      await androidApi.enableReaderMode(flags.map(_flagToWire).toList(), presenceCheckDelayMillis);
     } on Object {
       // Restores rather than clears, so a refused start leaves a session that is still
       // running exactly as it was.

@@ -308,8 +308,10 @@ class UriRecord {
     // alone would be a different URI, so report "not a URI record" rather than guess.
     if (prefixIndex >= NdefRecord.uriPrefixList.length) return null;
 
-    return _parse('${NdefRecord.uriPrefixList[prefixIndex]}'
-        '${utf8.decode(record.payload.sublist(1), allowMalformed: true)}');
+    return _parse(
+      '${NdefRecord.uriPrefixList[prefixIndex]}'
+      '${utf8.decode(record.payload.sublist(1), allowMalformed: true)}',
+    );
   }
 
   /// Mirrors what [create] accepts, so a record this package refuses to write is also one it
@@ -358,8 +360,7 @@ class SmartPosterRecord {
   final ({String mimeType, Uint8List data})? icon;
 
   /// The title in [languageCode], falling back to any title the poster has.
-  String? title({String languageCode = 'en'}) =>
-      titles[languageCode] ?? (titles.isEmpty ? null : titles.values.first);
+  String? title({String languageCode = 'en'}) => titles[languageCode] ?? (titles.isEmpty ? null : titles.values.first);
 
   /// Builds a smart poster record.
   static NdefRecord create({

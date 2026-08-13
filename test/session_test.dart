@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nfc_util/android.dart' as android;
@@ -105,6 +106,24 @@ class _FakeIosHost extends NfcIosHostApi {
   Future<void> vasSessionInvalidate(String? alertMessage, String? errorMessage) async => vasInvalidateCount++;
 }
 
+/// A stand-in for the Android-only host, so reader mode can be driven without a device.
+class _FakeAndroidHost extends NfcAndroidHostApi {
+  int enableCount = 0;
+  int disableCount = 0;
+  List<ReaderFlagPigeon>? lastFlags;
+  int? lastPresenceCheckDelayMillis;
+
+  @override
+  Future<void> enableReaderMode(List<ReaderFlagPigeon> flags, int presenceCheckDelayMillis) async {
+    enableCount++;
+    lastFlags = flags;
+    lastPresenceCheckDelayMillis = presenceCheckDelayMillis;
+  }
+
+  @override
+  Future<void> disableReaderMode() async => disableCount++;
+}
+
 TagPigeon plainTag(String handle) => TagPigeon(handle: handle, id: Uint8List.fromList([1, 2, 3]));
 
 void main() {
@@ -187,6 +206,114 @@ void main() {
     });
   });
 
+  group('rejected arguments', () {
+    test('rejects an empty polling set rather than letting the platforms disagree about it', () async {
+      // Android substituted all four reader flags, iOS refused the start. Neither is what
+      // the caller asked for, and they are not the same thing.
+      await expectLater(
+        NfcUtil.instance.startSession(onDiscovered: (_) async {}, pollingOptions: const <NfcPollingOption>{}),
+        throwsArgumentError,
+      );
+      expect(host.startCount, 0, reason: 'the platform is never reached');
+    });
+
+    test('a rejected polling set leaves nothing armed', () async {
+      var called = false;
+      await NfcUtil.instance
+          .startSession(onDiscovered: (_) async => called = true, pollingOptions: const <NfcPollingOption>{})
+          .onError((_, _) {});
+
+      await deliverTag(plainTag('ghost'));
+      expect(called, isFalse);
+    });
+
+    test('null still means every option, which is the only way to ask for that', () async {
+      await NfcUtil.instance.startSession(onDiscovered: (_) async {});
+      expect(host.lastConfig!.pollingOptions, hasLength(3));
+    });
+
+    test('rejects a negative presence-check delay', () async {
+      await expectLater(
+        NfcUtil.instance.startSession(
+          onDiscovered: (_) async {},
+          presenceCheckDelayAndroid: const Duration(milliseconds: -1),
+        ),
+        throwsArgumentError,
+      );
+      expect(host.startCount, 0);
+    });
+
+    test('rejects a presence-check delay that would not survive the narrowing to a 32-bit int', () async {
+      // Android does `presenceCheckDelayMillis.toInt()` before putting it in the reader-mode
+      // Bundle, so thirty days used to arrive there as a negative delay.
+      await expectLater(
+        NfcUtil.instance.startSession(onDiscovered: (_) async {}, presenceCheckDelayAndroid: const Duration(days: 30)),
+        throwsArgumentError,
+      );
+      expect(host.startCount, 0);
+    });
+
+    test('accepts the largest delay that does survive it', () async {
+      await NfcUtil.instance.startSession(
+        onDiscovered: (_) async {},
+        presenceCheckDelayAndroid: const Duration(milliseconds: 0x7fffffff),
+      );
+      expect(host.lastConfig!.presenceCheckDelayMillis, 0x7fffffff);
+    });
+  });
+
+  group('enableReaderMode', () {
+    late _FakeAndroidHost androidHost;
+    late void Function() restoreAndroid;
+
+    setUp(() {
+      androidHost = _FakeAndroidHost();
+      restoreAndroid = debugReplaceApis(android: androidHost);
+    });
+
+    tearDown(() => restoreAndroid());
+
+    test('passes the raw flags and the delay through', () async {
+      await android.NfcUtilAndroid.instance.enableReaderMode(
+        flags: {android.NfcReaderFlag.nfcA, android.NfcReaderFlag.skipNdefCheck},
+        onDiscovered: (_) async {},
+        presenceCheckDelay: const Duration(milliseconds: 500),
+      );
+
+      expect(androidHost.lastFlags, containsAll([ReaderFlagPigeon.nfcA, ReaderFlagPigeon.skipNdefCheck]));
+      expect(androidHost.lastPresenceCheckDelayMillis, 500);
+    });
+
+    test('rejects an empty flag set, which would poll for nothing at all', () async {
+      // The raw list has no all-technologies fallback on the Android side, unlike the
+      // cross-platform config: an empty set reaches enableReaderMode as flags `0`.
+      await expectLater(
+        android.NfcUtilAndroid.instance.enableReaderMode(
+          flags: const <android.NfcReaderFlag>{},
+          onDiscovered: (_) async {},
+        ),
+        throwsArgumentError,
+      );
+      expect(androidHost.enableCount, 0);
+    });
+
+    test('rejects a presence-check delay the Bundle cannot carry, before arming anything', () async {
+      var called = false;
+      await expectLater(
+        android.NfcUtilAndroid.instance.enableReaderMode(
+          flags: {android.NfcReaderFlag.nfcA},
+          onDiscovered: (_) async => called = true,
+          presenceCheckDelay: const Duration(days: 30),
+        ),
+        throwsArgumentError,
+      );
+      expect(androidHost.enableCount, 0);
+
+      await deliverTag(plainTag('ghost'));
+      expect(called, isFalse);
+    });
+  });
+
   group('tag delivery', () {
     test('hands the tag to the callback and then releases the native handle', () async {
       NfcTag? received;
@@ -239,12 +366,14 @@ void main() {
       NfcError? received;
       await NfcUtil.instance.startSession(onDiscovered: (_) async {}, onError: (e) async => received = e);
 
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.ios,
-        iosCode: ReaderErrorCodePigeon.tagConnectionLost,
-        message: 'Tag connection lost',
-        sessionEnded: true,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.ios,
+          iosCode: ReaderErrorCodePigeon.tagConnectionLost,
+          message: 'Tag connection lost',
+          sessionEnded: true,
+        ),
+      );
 
       expect(received?.source, NfcErrorSource.ios);
       expect(received?.iosCode, NfcReaderErrorCode.tagConnectionLost);
@@ -256,12 +385,14 @@ void main() {
       NfcError? received;
       await NfcUtil.instance.startSession(onDiscovered: (_) async {}, onError: (e) async => received = e);
 
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.android,
-        androidCode: AndroidErrorCodePigeon.tagLost,
-        message: 'TagLostException',
-        sessionEnded: true,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.android,
+          androidCode: AndroidErrorCodePigeon.tagLost,
+          message: 'TagLostException',
+          sessionEnded: true,
+        ),
+      );
 
       expect(received?.source, NfcErrorSource.android);
       expect(received?.androidCode, NfcAndroidErrorCode.tagLost);
@@ -279,6 +410,39 @@ void main() {
         );
         expect(received?.iosCode, isNotNull);
       }
+    });
+
+    test('an onError that throws past its first await is reported rather than left unhandled', () async {
+      // Past the first await is the case the synchronous path cannot catch: the generated
+      // handler's try/catch has already returned by the time the continuation runs, so a
+      // dropped future surfaced as an unhandled zone error with nothing tying it to here.
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      FlutterError.onError = reported.add;
+      addTearDown(() => FlutterError.onError = previous);
+
+      await NfcUtil.instance.startSession(
+        onDiscovered: (_) async {},
+        onError: (_) async {
+          await Future<void>.delayed(Duration.zero);
+          throw StateError('boom');
+        },
+      );
+
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.ios,
+          iosCode: ReaderErrorCodePigeon.sessionTimeout,
+          message: 'timed out',
+          sessionEnded: true,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(reported, hasLength(1));
+      expect(reported.single.exception, isA<StateError>());
+      expect(reported.single.library, 'nfc_util');
     });
   });
 
@@ -366,15 +530,18 @@ void main() {
       await NfcUtil.instance.startSession(onDiscovered: (_) async {}, onError: (e) async => received = e);
 
       host.startError = PlatformException(code: 'session_already_exists');
-      await NfcUtil.instance.startSession(onDiscovered: (_) async {}, onError: (_) async => fail('never'))
+      await NfcUtil.instance
+          .startSession(onDiscovered: (_) async {}, onError: (_) async => fail('never'))
           .catchError((_) {});
 
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.android,
-        androidCode: AndroidErrorCodePigeon.tagLost,
-        message: 'gone',
-        sessionEnded: true,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.android,
+          androidCode: AndroidErrorCodePigeon.tagLost,
+          message: 'gone',
+          sessionEnded: true,
+        ),
+      );
       expect(received, isNotNull);
     });
 
@@ -489,12 +656,14 @@ void main() {
 
       await ios.NfcUtilIos.instance.vasSessionInvalidate();
 
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.ios,
-        iosCode: ReaderErrorCodePigeon.sessionTimeout,
-        message: 'timed out',
-        sessionEnded: true,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.ios,
+          iosCode: ReaderErrorCodePigeon.sessionTimeout,
+          message: 'timed out',
+          sessionEnded: true,
+        ),
+      );
       expect(tagError, isNotNull);
     });
 
@@ -544,12 +713,14 @@ void main() {
       var delivered = 0;
       await NfcUtil.instance.startSession(onDiscovered: (_) async => delivered++, onError: (_) async {});
 
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.ios,
-        iosCode: ReaderErrorCodePigeon.userCanceled,
-        message: 'cancelled',
-        sessionEnded: true,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.ios,
+          iosCode: ReaderErrorCodePigeon.userCanceled,
+          message: 'cancelled',
+          sessionEnded: true,
+        ),
+      );
 
       await deliverTag(plainTag('after-cancel'));
       expect(delivered, 0, reason: 'the handlers go with the session that owned them');
@@ -561,12 +732,14 @@ void main() {
       await NfcUtil.instance.startSession(onDiscovered: (_) async => delivered++, onError: (_) async {});
 
       // Android reports an unreadable tag without ending reader mode.
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.android,
-        androidCode: AndroidErrorCodePigeon.io,
-        message: 'one bad tag',
-        sessionEnded: false,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.android,
+          androidCode: AndroidErrorCodePigeon.io,
+          message: 'one bad tag',
+          sessionEnded: false,
+        ),
+      );
 
       await deliverTag(plainTag('next-tag'));
       expect(delivered, 1);
@@ -583,15 +756,44 @@ void main() {
         },
       );
 
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.ios,
-        iosCode: ReaderErrorCodePigeon.sessionTimeout,
-        message: 'timed out',
-        sessionEnded: true,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.ios,
+          iosCode: ReaderErrorCodePigeon.sessionTimeout,
+          message: 'timed out',
+          sessionEnded: true,
+        ),
+      );
 
       await deliverTag(plainTag('to-the-restart'));
       expect(second, 1);
+    });
+
+    test('an Android session the activity took down with it disarms like any other', () async {
+      // The payload NfcUtilPlugin.teardownSession(notify = true) now sends from
+      // onDetachedFromActivity and onDetachedFromActivityForConfigChanges. Before it, a
+      // rotation left this stack armed and the app believing a session was still polling.
+      NfcError? received;
+      var delivered = 0;
+      await NfcUtil.instance.startSession(
+        onDiscovered: (_) async => delivered++,
+        onError: (e) async => received = e,
+      );
+
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.android,
+          androidCode: AndroidErrorCodePigeon.unknown,
+          message: 'The reader session ended because the activity was detached.',
+          sessionEnded: true,
+        ),
+      );
+
+      expect(received?.sessionEnded, isTrue);
+      expect(received?.androidCode, NfcAndroidErrorCode.unknown);
+
+      await deliverTag(plainTag('after-detach'));
+      expect(delivered, 0, reason: 'the arm went with the session the activity took down');
     });
   });
 
@@ -601,19 +803,23 @@ void main() {
       await NfcUtil.instance.startSession(onDiscovered: (_) async {}, onError: (e) async => ended.add(e.sessionEnded));
 
       // Android: one unreadable tag, reader mode still polling.
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.android,
-        androidCode: AndroidErrorCodePigeon.io,
-        message: 'tag could not be read',
-        sessionEnded: false,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.android,
+          androidCode: AndroidErrorCodePigeon.io,
+          message: 'tag could not be read',
+          sessionEnded: false,
+        ),
+      );
       // iOS: the sheet timed out, the session is gone.
-      await deliverError(NfcErrorPigeon(
-        source: ErrorSourcePigeon.ios,
-        iosCode: ReaderErrorCodePigeon.sessionTimeout,
-        message: 'timed out',
-        sessionEnded: true,
-      ));
+      await deliverError(
+        NfcErrorPigeon(
+          source: ErrorSourcePigeon.ios,
+          iosCode: ReaderErrorCodePigeon.sessionTimeout,
+          message: 'timed out',
+          sessionEnded: true,
+        ),
+      );
 
       expect(ended, [false, true]);
     });

@@ -1,4 +1,11 @@
 include: package:flutter_lints/flutter.yaml
 
+# The width the sources are actually written at, and the one tool/generate_pigeon.sh used to
+# pass by hand. Declared here so `dart format` -- and pana, which runs it to score the
+# package -- agree with the code instead of reflowing it to eighty columns.
+formatter:
+  page_width: 120
+  trailing_commas: preserve
+
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

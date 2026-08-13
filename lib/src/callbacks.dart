@@ -1,5 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
+
+// Also re-exports dart:typed_data, which is where Uint8List below comes from.
+import 'package:flutter/foundation.dart';
 
 import 'api.dart';
 import 'common.dart';
@@ -103,13 +105,35 @@ class NfcCallbacks implements NfcFlutterApi {
     final isVas = kind == SessionKindPigeon.vas;
     final arms = isVas ? _vasArms : _sessionArms;
 
-    // Captured before dispatching, not after. The handler runs synchronously, and an app
-    // that restarts from onError -- which is what the docs tell it to do -- pushes its new
-    // arm before this returns; popping the top afterwards would deafen the session it just
-    // started. Removing the arm we actually dispatched to, by identity, is safe either way.
+    // Captured before dispatching, not after. The handler is dispatched synchronously, and
+    // an app that restarts from onError -- which is what the docs tell it to do -- pushes its
+    // new arm before this returns; popping the top afterwards would deafen the session it
+    // just started. Removing the arm we actually dispatched to, by identity, is safe either
+    // way.
     final arm = arms.isEmpty ? null : arms.last;
 
-    (isVas ? vasErrorHandler : errorHandler)?.call(errorFromWire(error));
+    // Dispatched, not awaited. The generated `onError` is `void` on the wire, so there is
+    // nothing to await into, and awaiting would run the disarm below ahead of an async
+    // handler's continuation -- breaking the restart-from-onError contract above.
+    //
+    // The future is still watched, because dropping it is what turned a throwing async
+    // handler into an unhandled zone error: reported far from its cause, with nothing to say
+    // it came from here. A synchronous throw is already caught by the generated handler.
+    final dispatched = (isVas ? vasErrorHandler : errorHandler)?.call(errorFromWire(error));
+    if (dispatched != null) {
+      unawaited(
+        dispatched.catchError((Object thrown, StackTrace stack) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: thrown,
+              stack: stack,
+              library: 'nfc_util',
+              context: ErrorDescription('while an onError callback handled an NFC session failure'),
+            ),
+          );
+        }),
+      );
+    }
 
     // A session that ended by itself -- cancelled, timed out, invalidated -- never runs the
     // disarm closure that a stopSession would, so without this its handlers stay on the

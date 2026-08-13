@@ -1,3 +1,69 @@
+## 3.1.0
+
+Four bugs, and all four failed the same way: something went wrong and the app was never told.
+Next to 3.0.1, a scan that dies when the phone is rotated now says so, an error handler that
+fails leaves a trace instead of vanishing, and two settings that used to be changed quietly on
+their way to the platform are now rejected up front.
+
+**Is this a safe upgrade?** For nearly every app, yes -- upgrade and the fixes apply on their
+own. No class, method, parameter or enum changed its name or its shape, so nothing has to be
+rewritten. One thing is worth checking first: an app that passes an empty `pollingOptions` set,
+or a presence-check delay that is negative or longer than about 24.9 days, now gets an
+`ArgumentError` from the call itself, with a message saying why. Neither input ever did what it
+looked like it did, so an app passing one was already broken on at least one platform -- the
+failure is just loud now instead of silent. Those are the last two entries below.
+
+* **Rotating the phone during a scan no longer leaves the app waiting for a tag that cannot
+  arrive.** *(Fix -- Android only; no code change needed.)* The scan really is over once the
+  activity goes away: reader mode needs an activity, and the reattach after a rotation does not
+  bring the session back. Nothing said so, though. Tearing reader mode down never told Dart, so
+  the app's `onDiscovered` and `onError` stayed registered and it went on believing a scan was
+  running while nothing was polling. Both activity detaches now report an error with
+  `sessionEnded: true`, the signal an app already handles for a timeout or a user cancel, so
+  the scan can be restarted the same way. Engine detach stays silent on purpose: the Dart
+  isolate that would receive the message is going away too.
+
+* **An `onError` handler that fails partway through is now reported instead of vanishing.**
+  *(Fix -- both platforms; matters to apps whose `onError` is `async` and can throw. No code
+  change needed.)* A handler that awaited something and then threw produced an unhandled zone
+  error far from its cause, with nothing in it naming this plugin. `onError` is typed
+  `Future<void> Function(NfcError)` and the future it returned was discarded; a synchronous
+  throw was already caught by the generated Pigeon handler, so only a throw after the handler's
+  first `await` escaped. That future is now watched, and a failure goes to
+  `FlutterError.reportError` with `library: 'nfc_util'`. Dispatch is still synchronous rather
+  than awaited, so restarting a session from inside `onError`, the pattern the docs describe,
+  keeps working.
+
+* **`pollingOptions: {}` now throws `ArgumentError` instead of meaning one thing on Android and
+  the opposite on iOS.** *(Behaviour change -- only for callers that pass an empty set; pass
+  `null` instead.)* An empty set made Android scan for everything while iOS refused to start at
+  all -- the same code, opposite outcomes. Android was substituting all four reader flags; iOS
+  returned an `unavailable` error. The check now runs in Dart, before either platform is
+  touched. `null` has always been the way to ask for "poll for everything".
+  `NfcUtilAndroid.enableReaderMode` rejects an empty `flags` set for the same reason, and there
+  the old behaviour was worse: the raw flag list has no all-technologies fallback, so an empty
+  set started reader mode with flags `0`, polling for nothing at all.
+
+* **A presence-check delay the platform cannot carry now throws `ArgumentError` rather than
+  quietly becoming a different number.** *(Behaviour change -- only for callers passing a
+  negative delay or one over about 24.9 days; the 250 ms default is unchanged.)* A negative
+  `Duration` reached the reader as a negative delay, and anything past `0x7fffffff`
+  milliseconds wrapped around into some other number entirely -- thirty days arriving as a
+  negative one. Dart sends the `Duration`'s `inMilliseconds` as a 64-bit value and Kotlin
+  narrows it with `.toInt()` before putting it in the reader-mode bundle, so both cases
+  corrupted the extra without a word. Zero to `0x7fffffff` milliseconds is accepted. Applies to
+  `presenceCheckDelayAndroid` on `NfcUtil.startSession` and to `presenceCheckDelay` on
+  `NfcUtilAndroid.enableReaderMode`.
+
+None of the rest is visible to an app. `analysis_options.yaml` now declares the formatter
+settings the sources are actually written at -- `page_width` 120 and `trailing_commas` preserve
+-- so `dart format` and pana, which scores the package on pub.dev, agree with the code rather
+than fight it, and `tool/generate_pigeon.sh` no longer passes `--line-length` by hand. The
+example moves from `flutter_lints` 5 to 6, matching the package. A new CI workflow runs the
+format check, both analyzers, both Dart suites and a publish dry run, with a separate job for
+the Kotlin unit tests -- which is what would have caught the formatting drift. The Dart unit
+tests go from 106 to 117.
+
 ## 3.0.1
 
 Two things that are cheap to change now and expensive once apps depend on them. 3.0.0 was

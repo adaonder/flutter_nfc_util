@@ -77,6 +77,10 @@ class NfcUtil {
   /// [NfcErrorCodes.sessionAlreadyExists] when one is still running. Unlike 2.x, both
   /// platforms report that the same way; Android used to replace the running session in
   /// silence.
+  ///
+  /// Throws an `ArgumentError`, before the platform is touched, for a `pollingOptions` that
+  /// is empty -- pass null for "poll for everything" -- or a `presenceCheckDelayAndroid`
+  /// outside zero to `0x7fffffff` milliseconds.
   Future<void> startSession({
     required Future<void> Function(NfcTag tag) onDiscovered,
     Future<void> Function(NfcError error)? onError,
@@ -101,6 +105,17 @@ class NfcUtil {
     /// Android. How long the platform waits between presence checks. 2.x hardcoded 250 ms.
     Duration presenceCheckDelayAndroid = const Duration(milliseconds: 250),
   }) async {
+    // Rejected here rather than passed through, because the platforms disagree about it:
+    // Android substitutes all four reader flags and iOS refuses the start as `unavailable`.
+    // `null` already means "poll for everything"; an empty set is a caller whose own filter
+    // came out empty, and it means nothing good on either side.
+    if (pollingOptions != null && pollingOptions.isEmpty) {
+      throw ArgumentError.value(pollingOptions, 'pollingOptions', 'is empty; pass null to poll for every option');
+    }
+    // Both guards run before arming, so a rejected call leaves nothing listening for a
+    // session that was never started.
+    final presenceCheckDelayMillis = presenceCheckDelayToWire(presenceCheckDelayAndroid, 'presenceCheckDelayAndroid');
+
     // Armed before the call, not after it: Android brings reader mode up before its reply
     // reaches Dart, so a tag can be discovered while the handler would still be null.
     final restore = NfcCallbacks.instance.armSession(
@@ -118,7 +133,7 @@ class NfcUtil {
           noPlatformSounds: noPlatformSoundsAndroid,
           skipNdefCheck: skipNdefCheck,
           discoverNfcBarcode: discoverNfcBarcodeAndroid,
-          presenceCheckDelayMillis: presenceCheckDelayAndroid.inMilliseconds,
+          presenceCheckDelayMillis: presenceCheckDelayMillis,
         ),
       );
     } on Object {
