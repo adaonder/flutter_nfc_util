@@ -2,6 +2,73 @@ import 'dart:typed_data';
 
 import '../api.dart';
 import '../callbacks.dart';
+import '../pigeon.g.dart';
+
+/// What one frame of a reader's polling loop was.
+///
+/// The values are the reader's own signalling, not the tag's: [on] and [off] bracket the
+/// period the field was up, and [a], [b] and [f] are the technology-specific probes the
+/// reader sent inside it.
+enum PollingFrameType {
+  /// An NFC-A probe.
+  a,
+
+  /// An NFC-B probe.
+  b,
+
+  /// An NFC-F probe.
+  f,
+
+  /// The reader's field went away.
+  off,
+
+  /// The reader's field came up.
+  on,
+
+  /// A frame this release does not recognise. Reported rather than dropped, because a
+  /// reader's proprietary probe is often exactly what an app is filtering for.
+  unknown,
+}
+
+/// One frame of a reader's polling loop, seen while observe mode is on.
+///
+/// Android only, API 35 and above. See [HostCardEmulation.onPollingFrames].
+class PollingFrame {
+  const PollingFrame._(this._data);
+
+  final PollingFramePigeon _data;
+
+  PollingFrameType get type => switch (_data.type) {
+    PollingFrameTypePigeon.a => PollingFrameType.a,
+    PollingFrameTypePigeon.b => PollingFrameType.b,
+    PollingFrameTypePigeon.f => PollingFrameType.f,
+    PollingFrameTypePigeon.off => PollingFrameType.off,
+    PollingFrameTypePigeon.on => PollingFrameType.on,
+    PollingFrameTypePigeon.unknown => PollingFrameType.unknown,
+  };
+
+  /// The frame bytes. Empty for [PollingFrameType.on] and [PollingFrameType.off], which
+  /// carry none.
+  Uint8List get data => _data.data;
+
+  /// The controller's measure of field strength in vendor-defined units, or -1 on a device
+  /// whose stack does not report it. Only comparable against other frames from the same
+  /// device.
+  int get vendorSpecificGain => _data.vendorSpecificGain;
+
+  /// When the controller saw the frame, as `SystemClock.uptimeMillis` truncated to 32 bits.
+  ///
+  /// Wraps roughly every 50 days, so treat it as a value to subtract from its neighbours
+  /// rather than as a point in time.
+  int get timestamp => _data.timestamp;
+
+  /// Whether this frame matched a filter registered with `autoTransact`, which takes the
+  /// device out of observe mode for the exchange that follows it.
+  bool get triggeredAutoTransact => _data.triggeredAutoTransact;
+
+  @override
+  String toString() => 'PollingFrame(${type.name}, ${data.length} bytes, gain $vendorSpecificGain)';
+}
 
 /// Host card emulation: the phone answers a reader as if it were a contactless card.
 ///
@@ -93,4 +160,84 @@ class HostCardEmulation {
   /// AIDs is the user's wallet. Pair it with the app's lifecycle: true on resume, false on
   /// pause.
   Future<void> setPreferredService(bool preferred) => androidApi.hceSetPreferredService(preferred);
+
+  // -------------------------------------------------------------------------------------
+  // Observe mode. Android 15 (API 35) and above.
+  // -------------------------------------------------------------------------------------
+
+  /// Whether this device can observe a reader's polling loop.
+  ///
+  /// False below API 35, and on hardware whose controller cannot report polling frames.
+  /// Every other call in this section is only meaningful when this is true.
+  Future<bool> isObserveModeSupported() => androidApi.hceIsObserveModeSupported();
+
+  /// Whether observe mode is on right now.
+  Future<bool> isObserveModeEnabled() => androidApi.hceIsObserveModeEnabled();
+
+  /// Stops the device answering readers, and starts reporting their polling frames to
+  /// [onPollingFrames] instead.
+  ///
+  /// This is how an app sees a reader *before* deciding to be a card for it: nothing is
+  /// transacted while observe mode is on, so the app can inspect the loop, show a prompt, or
+  /// pick which credential to present, and only then let the exchange happen -- with
+  /// [setObserveModeEnabled] false, or automatically through a filter registered with
+  /// `autoTransact`.
+  ///
+  /// **Call [setPreferredService] with true first.** Only the preferred service may change
+  /// observe mode; a call from an app that is not it returns false rather than throwing,
+  /// because that is an ordinary state to be in and not a defect.
+  ///
+  /// [registerAids] is *not* a prerequisite -- an app can watch readers without offering to
+  /// be a card. This call enables the plugin's emulation service by itself, because the
+  /// platform will not make a disabled service the preferred one. That enablement is the same
+  /// persistent component state [registerAids] describes, and [unregisterAids] is the way
+  /// back from it either way; it returns false when there were no AIDs to remove, which is
+  /// not a failure.
+  ///
+  /// Throws a `PlatformException` with code `unsupported_api_level` below API 35.
+  Future<bool> setObserveModeEnabled(bool enabled) => androidApi.hceSetObserveModeEnabled(enabled);
+
+  /// Whether the emulation service should come up in observe mode whenever it becomes the
+  /// preferred service, instead of needing [setObserveModeEnabled] on every foreground.
+  ///
+  /// Persistent, like [registerAids]: it is stored against the service by the framework.
+  Future<bool> setDefaultToObserveMode(bool shouldDefault) => androidApi.hceSetDefaultToObserveMode(shouldDefault);
+
+  /// Frames from the reader's polling loop, while observe mode is on.
+  ///
+  /// Delivered in batches -- one call can carry a whole loop -- and only for frames that
+  /// match a filter registered with [registerPollingLoopFilter] or
+  /// [registerPollingLoopPatternFilter].
+  set onPollingFrames(void Function(List<PollingFrame> frames)? handler) {
+    NfcCallbacks.instance.pollingFramesHandler = handler == null
+        ? null
+        : (frames) => handler([for (final frame in frames) PollingFrame._(frame)]);
+  }
+
+  /// Delivers polling frames whose bytes are exactly [filter], as uppercase hex.
+  ///
+  /// With [autoTransact] the platform leaves observe mode by itself the moment a frame
+  /// matches, so the exchange that follows is answered rather than merely watched. That is
+  /// the low-latency path: a reader will not wait for a round trip to Dart and back.
+  ///
+  /// Registration is persistent, like [registerAids], and scoped to this plugin's emulation
+  /// service.
+  Future<bool> registerPollingLoopFilter({required String filter, bool autoTransact = false}) =>
+      androidApi.hceRegisterPollingLoopFilter(filter, autoTransact);
+
+  /// As [registerPollingLoopFilter], but [pattern] matches a family of frames.
+  ///
+  /// **Not a regular expression**, despite the name, and the platform is strict about it:
+  /// measured on Android 17, a pattern must *begin* with hex digits and may then use `*` and
+  /// `?`. `6A*` and `6A01` are accepted; `.*`, a bare `*`, `????` and `*6A*` are all rejected
+  /// with `PlatformException('unavailable', 'Polling loop pattern filters may only contain
+  /// hexadecimal numbers, ?s and *s')`. Case does not matter.
+  Future<bool> registerPollingLoopPatternFilter({required String pattern, bool autoTransact = false}) =>
+      androidApi.hceRegisterPollingLoopPatternFilter(pattern, autoTransact);
+
+  /// Removes a filter added by [registerPollingLoopFilter].
+  Future<bool> removePollingLoopFilter(String filter) => androidApi.hceRemovePollingLoopFilter(filter);
+
+  /// Removes a filter added by [registerPollingLoopPatternFilter].
+  Future<bool> removePollingLoopPatternFilter(String pattern) => androidApi.hceRemovePollingLoopPatternFilter(pattern);
 }

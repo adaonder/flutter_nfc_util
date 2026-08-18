@@ -12,6 +12,23 @@
     -->
     <uses-permission android:name="android.permission.NFC" />
 
+    <!--
+      Declared explicitly, and not required, because Play *infers* android.hardware.nfc as
+      required from the permission above. Without this line every app that merely depends on
+      this plugin, including one where NFC is an optional extra, was filtered off every
+      device with no NFC controller.
+
+      An app that genuinely cannot work without NFC declares it required in its own manifest,
+      and needs no tools:replace to do it: the merger ORs android:required across manifests,
+      so the app's true wins over the false here. Verified against the merged manifest of a
+      built APK.
+
+          <uses-feature android:name="android.hardware.nfc" android:required="true" />
+    -->
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false" />
+
     <uses-feature
         android:name="android.hardware.nfc.hce"
         android:required="false" />

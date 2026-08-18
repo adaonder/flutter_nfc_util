@@ -27,16 +27,43 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+        </activity>
 
-            <!--
-              Background tag reading. These filters have to live here rather than in the
-              plugin, because they name this activity. Note android:launchMode="singleTop"
-              above: without it a tap starts a second copy of the activity instead of
-              delivering the tag to the running one.
+        <!--
+          Background tag reading, on an alias rather than on MainActivity itself.
 
-              NDEF_DISCOVERED is the most specific and wins when the tag holds a matching
-              message. TECH_DISCOVERED catches tags with no NDEF content at all.
-            -->
+          The filters have to live in the application's manifest rather than in the plugin,
+          because they name an activity of this app. They sit on an <activity-alias> for one
+          reason: android:permission guards the WHOLE activity, and MainActivity also carries
+          the LAUNCHER filter, so putting the attribute there would gate the launcher too.
+          The alias takes the taps; MainActivity stays unguarded and still appears in the
+          launcher. android:launchMode="singleTop" on MainActivity is what makes a tap deliver
+          to the running instance instead of starting a second copy.
+
+          android.permission.DISPATCH_NFC_MESSAGE is required from Android 17 (API 37) for an
+          activity to be dispatched an NFC intent at all, when the app targets above API 36.
+          Nothing is logged when it is missing; the tap simply does nothing, which is why the
+          example's Capabilities button calls NfcUtilAndroid.checkTagIntentSetup().
+
+          Safe on older devices, and measured rather than assumed. On both an API 37 Pixel and
+          an API 28 phone, `adb shell dumpsys package` reports the permission as declared by
+          the platform itself (sourcePackage=android, prot=signature|privileged) and held
+          by the NFC system service (com.google.android.nfc / com.android.nfc,
+          "DISPATCH_NFC_MESSAGE: granted=true"). So the service can still start a guarded
+          activity on an old OS, while ordinary apps cannot. It is an existing platform
+          permission newly *enforced* in API 37, not a new one.
+
+          NDEF_DISCOVERED is the most specific and wins when the tag holds a matching message.
+          TECH_DISCOVERED catches tags with no NDEF content at all.
+
+          None of this touches reader mode or foreground dispatch, which are unaffected by
+          every Android 16 and 17 change.
+        -->
+        <activity-alias
+            android:name=".NfcEntryAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:permission="android.permission.DISPATCH_NFC_MESSAGE">
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -48,7 +75,7 @@
             <meta-data
                 android:name="android.nfc.action.TECH_DISCOVERED"
                 android:resource="@xml/nfc_tech_filter"/>
-        </activity>
+        </activity-alias>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

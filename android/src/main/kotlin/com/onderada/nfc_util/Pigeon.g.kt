@@ -253,6 +253,101 @@ enum class ReaderFlagPigeon(val raw: Int) {
 }
 
 /**
+ * What `NfcAdapter.setDiscoveryTechnology` polls for. Android only, API 35 and above.
+ *
+ * [disable] and [keep] are not technologies and do not combine with one: the platform
+ * spells them as `FLAG_READER_DISABLE` (no bits at all) and `FLAG_READER_KEEP` (bit 31),
+ * so a set holding either alongside a technology has no meaningful reading.
+ */
+enum class PollTechPigeon(val raw: Int) {
+  NFC_A(0),
+  NFC_B(1),
+  NFC_F(2),
+  NFC_V(3),
+  DISABLE(4),
+  KEEP(5);
+
+  companion object {
+    fun ofRaw(raw: Int): PollTechPigeon? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/**
+ * What `NfcAdapter.setDiscoveryTechnology` listens as. Android only, API 35 and above.
+ *
+ * There is no NFC-V entry: the platform offers `FLAG_LISTEN_NFC_PASSIVE_A`, `_B` and `_F`
+ * only. See [PollTechPigeon] for [disable] and [keep].
+ */
+enum class ListenTechPigeon(val raw: Int) {
+  NFC_A(0),
+  NFC_B(1),
+  NFC_F(2),
+  DISABLE(3),
+  KEEP(4);
+
+  companion object {
+    fun ofRaw(raw: Int): ListenTechPigeon? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/** `PollingFrame.POLLING_LOOP_TYPE_*`. Android only, API 35 and above. */
+enum class PollingFrameTypePigeon(val raw: Int) {
+  A(0),
+  B(1),
+  F(2),
+  OFF(3),
+  ON(4),
+  UNKNOWN(5);
+
+  companion object {
+    fun ofRaw(raw: Int): PollingFrameTypePigeon? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/**
+ * Which `CardEmulation.NfcEventCallback` method fired. Android only, API 36 and above.
+ *
+ * One flat kind rather than seven callbacks: the interface gains methods with the platform
+ * -- API 37 adds `onOffHostAidSelected` -- and a single event class absorbs those without a
+ * change to the wire.
+ */
+enum class NfcEventKindPigeon(val raw: Int) {
+  PREFERRED_SERVICE_CHANGED(0),
+  OBSERVE_MODE_STATE_CHANGED(1),
+  AID_CONFLICT_OCCURRED(2),
+  AID_NOT_ROUTED(3),
+  NFC_STATE_CHANGED(4),
+  REMOTE_FIELD_CHANGED(5),
+  INTERNAL_ERROR(6);
+
+  companion object {
+    fun ofRaw(raw: Int): NfcEventKindPigeon? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/** `CardEmulation.NFC_INTERNAL_ERROR_*`. Android only, API 36 and above. */
+enum class NfcInternalErrorPigeon(val raw: Int) {
+  UNKNOWN(0),
+  NFC_CRASH_RESTART(1),
+  NFC_HARDWARE_ERROR(2),
+  COMMAND_TIMEOUT(3);
+
+  companion object {
+    fun ofRaw(raw: Int): NfcInternalErrorPigeon? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/**
  * Selects which `android.nfc.tech` class a tag operation runs against.
  *
  * Collapsing the technology into a parameter is what lets one `transceive` replace the
@@ -676,6 +771,317 @@ data class SessionConfigPigeon (
   }
   override fun toString(): String {
     return "SessionConfigPigeon(pollingOptions=$pollingOptions, alertMessage=$alertMessage, invalidateAfterFirstRead=$invalidateAfterFirstRead, noPlatformSounds=$noPlatformSounds, skipNdefCheck=$skipNdefCheck, discoverNfcBarcode=$discoverNfcBarcode, presenceCheckDelayMillis=$presenceCheckDelayMillis)"
+  }
+}
+
+/**
+ * One frame of the reader's polling loop, delivered while observe mode is on.
+ *
+ * Android only, API 35 and above.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class PollingFramePigeon (
+  val type: PollingFrameTypePigeon,
+  /** The frame bytes. Empty for the field-on and field-off frames, which carry no data. */
+  val data: ByteArray,
+  /**
+   * The controller's own measure of field strength, in vendor-defined units. Zero on a
+   * device whose stack does not report it.
+   */
+  val vendorSpecificGain: Long,
+  /** `SystemClock.uptimeMillis` when the controller saw the frame, wrapping at 2^32. */
+  val timestamp: Long,
+  /**
+   * Whether this frame matched a filter registered with `autoTransact`, which takes the
+   * device out of observe mode for the exchange that follows.
+   */
+  val triggeredAutoTransact: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): PollingFramePigeon {
+      val type = pigeonVar_list[0] as PollingFrameTypePigeon
+      val data = pigeonVar_list[1] as ByteArray
+      val vendorSpecificGain = pigeonVar_list[2] as Long
+      val timestamp = pigeonVar_list[3] as Long
+      val triggeredAutoTransact = pigeonVar_list[4] as Boolean
+      return PollingFramePigeon(type, data, vendorSpecificGain, timestamp, triggeredAutoTransact)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      type,
+      data,
+      vendorSpecificGain,
+      timestamp,
+      triggeredAutoTransact,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as PollingFramePigeon
+    return PigeonPigeonUtils.deepEquals(this.type, other.type) && PigeonPigeonUtils.deepEquals(this.data, other.data) && PigeonPigeonUtils.deepEquals(this.vendorSpecificGain, other.vendorSpecificGain) && PigeonPigeonUtils.deepEquals(this.timestamp, other.timestamp) && PigeonPigeonUtils.deepEquals(this.triggeredAutoTransact, other.triggeredAutoTransact)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.type)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.data)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.vendorSpecificGain)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.timestamp)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.triggeredAutoTransact)
+    return result
+  }
+  override fun toString(): String {
+    return "PollingFramePigeon(type=$type, data=${data.contentToString()}, vendorSpecificGain=$vendorSpecificGain, timestamp=$timestamp, triggeredAutoTransact=$triggeredAutoTransact)"
+  }
+}
+
+/**
+ * One antenna's position, in millimetres from the top-left of the *back* of the device
+ * held face up in its natural orientation.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class AvailableNfcAntennaPigeon (
+  val locationX: Long,
+  val locationY: Long
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): AvailableNfcAntennaPigeon {
+      val locationX = pigeonVar_list[0] as Long
+      val locationY = pigeonVar_list[1] as Long
+      return AvailableNfcAntennaPigeon(locationX, locationY)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      locationX,
+      locationY,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as AvailableNfcAntennaPigeon
+    return PigeonPigeonUtils.deepEquals(this.locationX, other.locationX) && PigeonPigeonUtils.deepEquals(this.locationY, other.locationY)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.locationX)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.locationY)
+    return result
+  }
+  override fun toString(): String {
+    return "AvailableNfcAntennaPigeon(locationX=$locationX, locationY=$locationY)"
+  }
+}
+
+/**
+ * `NfcAdapter.getNfcAntennaInfo`. Android only, API 34 and above.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class NfcAntennaInfoPigeon (
+  val deviceWidth: Long,
+  val deviceHeight: Long,
+  /** True for a foldable, where the coordinates describe the device unfolded. */
+  val deviceFoldable: Boolean,
+  /** Empty on a device that reports NFC but publishes no antenna geometry. */
+  val availableNfcAntennas: List<AvailableNfcAntennaPigeon>
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): NfcAntennaInfoPigeon {
+      val deviceWidth = pigeonVar_list[0] as Long
+      val deviceHeight = pigeonVar_list[1] as Long
+      val deviceFoldable = pigeonVar_list[2] as Boolean
+      val availableNfcAntennas = pigeonVar_list[3] as List<AvailableNfcAntennaPigeon>
+      return NfcAntennaInfoPigeon(deviceWidth, deviceHeight, deviceFoldable, availableNfcAntennas)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      deviceWidth,
+      deviceHeight,
+      deviceFoldable,
+      availableNfcAntennas,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as NfcAntennaInfoPigeon
+    return PigeonPigeonUtils.deepEquals(this.deviceWidth, other.deviceWidth) && PigeonPigeonUtils.deepEquals(this.deviceHeight, other.deviceHeight) && PigeonPigeonUtils.deepEquals(this.deviceFoldable, other.deviceFoldable) && PigeonPigeonUtils.deepEquals(this.availableNfcAntennas, other.availableNfcAntennas)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.deviceWidth)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.deviceHeight)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.deviceFoldable)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.availableNfcAntennas)
+    return result
+  }
+  override fun toString(): String {
+    return "NfcAntennaInfoPigeon(deviceWidth=$deviceWidth, deviceHeight=$deviceHeight, deviceFoldable=$deviceFoldable, availableNfcAntennas=$availableNfcAntennas)"
+  }
+}
+
+/**
+ * One `CardEmulation.NfcEventCallback` notification.
+ *
+ * Flat rather than a union: which optional fields are set follows from [kind], and Pigeon
+ * has no sealed-class support to express that on both sides.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class NfcEventPigeon (
+  val kind: NfcEventKindPigeon,
+  /**
+   * Set for [NfcEventKindPigeon.preferredServiceChanged],
+   * [NfcEventKindPigeon.observeModeStateChanged] and
+   * [NfcEventKindPigeon.remoteFieldChanged].
+   */
+  val enabled: Boolean? = null,
+  /**
+   * Set for [NfcEventKindPigeon.aidConflictOccurred] and
+   * [NfcEventKindPigeon.aidNotRouted].
+   */
+  val aid: String? = null,
+  /** Set for [NfcEventKindPigeon.nfcStateChanged]. */
+  val adapterState: AdapterStatePigeon? = null,
+  /** Set for [NfcEventKindPigeon.internalError]. */
+  val internalError: NfcInternalErrorPigeon? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): NfcEventPigeon {
+      val kind = pigeonVar_list[0] as NfcEventKindPigeon
+      val enabled = pigeonVar_list[1] as Boolean?
+      val aid = pigeonVar_list[2] as String?
+      val adapterState = pigeonVar_list[3] as AdapterStatePigeon?
+      val internalError = pigeonVar_list[4] as NfcInternalErrorPigeon?
+      return NfcEventPigeon(kind, enabled, aid, adapterState, internalError)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      kind,
+      enabled,
+      aid,
+      adapterState,
+      internalError,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as NfcEventPigeon
+    return PigeonPigeonUtils.deepEquals(this.kind, other.kind) && PigeonPigeonUtils.deepEquals(this.enabled, other.enabled) && PigeonPigeonUtils.deepEquals(this.aid, other.aid) && PigeonPigeonUtils.deepEquals(this.adapterState, other.adapterState) && PigeonPigeonUtils.deepEquals(this.internalError, other.internalError)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.kind)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.enabled)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.aid)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.adapterState)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.internalError)
+    return result
+  }
+  override fun toString(): String {
+    return "NfcEventPigeon(kind=$kind, enabled=$enabled, aid=$aid, adapterState=$adapterState, internalError=$internalError)"
+  }
+}
+
+/**
+ * What the platform can tell an app about whether tag *intents* will reach it.
+ *
+ * Android 16 gave the user a per-app "launch via NFC" switch, and Android 17 made the
+ * receiving activity's `android:permission` load-bearing. Both fail silently -- the tap
+ * simply does nothing -- so this exists to turn that into something an app can report.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class TagIntentSetupPigeon (
+  /**
+   * True on API 37 and above, where an activity with an NFC intent filter is only
+   * dispatched to when it declares `android.permission.DISPATCH_NFC_MESSAGE`.
+   */
+  val dispatchPermissionRequired: Boolean,
+  /**
+   * Activities in this package that declare an NFC intent filter without that permission.
+   * Always empty when [dispatchPermissionRequired] is false.
+   */
+  val unguardedActivities: List<String>,
+  /**
+   * Whether the user has this app on the tag-scan allowlist. True below API 36, which has
+   * no allowlist.
+   */
+  val tagIntentAllowed: Boolean,
+  /** Whether the device implements the allowlist at all. */
+  val tagIntentPreferenceSupported: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): TagIntentSetupPigeon {
+      val dispatchPermissionRequired = pigeonVar_list[0] as Boolean
+      val unguardedActivities = pigeonVar_list[1] as List<String>
+      val tagIntentAllowed = pigeonVar_list[2] as Boolean
+      val tagIntentPreferenceSupported = pigeonVar_list[3] as Boolean
+      return TagIntentSetupPigeon(dispatchPermissionRequired, unguardedActivities, tagIntentAllowed, tagIntentPreferenceSupported)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      dispatchPermissionRequired,
+      unguardedActivities,
+      tagIntentAllowed,
+      tagIntentPreferenceSupported,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as TagIntentSetupPigeon
+    return PigeonPigeonUtils.deepEquals(this.dispatchPermissionRequired, other.dispatchPermissionRequired) && PigeonPigeonUtils.deepEquals(this.unguardedActivities, other.unguardedActivities) && PigeonPigeonUtils.deepEquals(this.tagIntentAllowed, other.tagIntentAllowed) && PigeonPigeonUtils.deepEquals(this.tagIntentPreferenceSupported, other.tagIntentPreferenceSupported)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.dispatchPermissionRequired)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.unguardedActivities)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.tagIntentAllowed)
+    result = 31 * result + PigeonPigeonUtils.deepHash(this.tagIntentPreferenceSupported)
+    return result
+  }
+  override fun toString(): String {
+    return "TagIntentSetupPigeon(dispatchPermissionRequired=$dispatchPermissionRequired, unguardedActivities=$unguardedActivities, tagIntentAllowed=$tagIntentAllowed, tagIntentPreferenceSupported=$tagIntentPreferenceSupported)"
   }
 }
 
@@ -2012,225 +2418,275 @@ private open class PigeonPigeonCodec : StandardMessageCodec() {
       }
       133.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          AndroidTechPigeon.ofRaw(it.toInt())
+          PollTechPigeon.ofRaw(it.toInt())
         }
       }
       134.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          TypeNameFormatPigeon.ofRaw(it.toInt())
+          ListenTechPigeon.ofRaw(it.toInt())
         }
       }
       135.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          MifareClassicTypePigeon.ofRaw(it.toInt())
+          PollingFrameTypePigeon.ofRaw(it.toInt())
         }
       }
       136.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          MifareUltralightTypePigeon.ofRaw(it.toInt())
+          NfcEventKindPigeon.ofRaw(it.toInt())
         }
       }
       137.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          NfcBarcodeTypePigeon.ofRaw(it.toInt())
+          NfcInternalErrorPigeon.ofRaw(it.toInt())
         }
       }
       138.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          MiFareFamilyPigeon.ofRaw(it.toInt())
+          AndroidTechPigeon.ofRaw(it.toInt())
         }
       }
       139.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          NdefStatusPigeon.ofRaw(it.toInt())
+          TypeNameFormatPigeon.ofRaw(it.toInt())
         }
       }
       140.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          Iso15693RequestFlagPigeon.ofRaw(it.toInt())
+          MifareClassicTypePigeon.ofRaw(it.toInt())
         }
       }
       141.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          FeliCaPollingRequestCodePigeon.ofRaw(it.toInt())
+          MifareUltralightTypePigeon.ofRaw(it.toInt())
         }
       }
       142.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          FeliCaPollingTimeSlotPigeon.ofRaw(it.toInt())
+          NfcBarcodeTypePigeon.ofRaw(it.toInt())
         }
       }
       143.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          VasModePigeon.ofRaw(it.toInt())
+          MiFareFamilyPigeon.ofRaw(it.toInt())
         }
       }
       144.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          VasResponseErrorCodePigeon.ofRaw(it.toInt())
+          NdefStatusPigeon.ofRaw(it.toInt())
         }
       }
       145.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          ErrorSourcePigeon.ofRaw(it.toInt())
+          Iso15693RequestFlagPigeon.ofRaw(it.toInt())
         }
       }
       146.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          SessionKindPigeon.ofRaw(it.toInt())
+          FeliCaPollingRequestCodePigeon.ofRaw(it.toInt())
         }
       }
       147.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          AndroidErrorCodePigeon.ofRaw(it.toInt())
+          FeliCaPollingTimeSlotPigeon.ofRaw(it.toInt())
         }
       }
       148.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          ReaderErrorCodePigeon.ofRaw(it.toInt())
+          VasModePigeon.ofRaw(it.toInt())
         }
       }
       149.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          NdefRecordPigeon.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          VasResponseErrorCodePigeon.ofRaw(it.toInt())
         }
       }
       150.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          NdefMessagePigeon.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          ErrorSourcePigeon.ofRaw(it.toInt())
         }
       }
       151.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          SessionConfigPigeon.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          SessionKindPigeon.ofRaw(it.toInt())
         }
       }
       152.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          NfcAPigeon.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          AndroidErrorCodePigeon.ofRaw(it.toInt())
         }
       }
       153.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          NfcBPigeon.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          ReaderErrorCodePigeon.ofRaw(it.toInt())
         }
       }
       154.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          NfcFPigeon.fromList(it)
+          NdefRecordPigeon.fromList(it)
         }
       }
       155.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          NfcVPigeon.fromList(it)
+          NdefMessagePigeon.fromList(it)
         }
       }
       156.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          IsoDepPigeon.fromList(it)
+          SessionConfigPigeon.fromList(it)
         }
       }
       157.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          MifareClassicPigeon.fromList(it)
+          PollingFramePigeon.fromList(it)
         }
       }
       158.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          MifareUltralightPigeon.fromList(it)
+          AvailableNfcAntennaPigeon.fromList(it)
         }
       }
       159.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          NfcBarcodePigeon.fromList(it)
+          NfcAntennaInfoPigeon.fromList(it)
         }
       }
       160.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          NdefAndroidPigeon.fromList(it)
+          NfcEventPigeon.fromList(it)
         }
       }
       161.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          NdefIosPigeon.fromList(it)
+          TagIntentSetupPigeon.fromList(it)
         }
       }
       162.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FeliCaPigeon.fromList(it)
+          NfcAPigeon.fromList(it)
         }
       }
       163.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          Iso7816Pigeon.fromList(it)
+          NfcBPigeon.fromList(it)
         }
       }
       164.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          Iso15693Pigeon.fromList(it)
+          NfcFPigeon.fromList(it)
         }
       }
       165.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          MiFarePigeon.fromList(it)
+          NfcVPigeon.fromList(it)
         }
       }
       166.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          TagPigeon.fromList(it)
+          IsoDepPigeon.fromList(it)
         }
       }
       167.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          Iso7816ResponseApduPigeon.fromList(it)
+          MifareClassicPigeon.fromList(it)
         }
       }
       168.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FeliCaPollingResponsePigeon.fromList(it)
+          MifareUltralightPigeon.fromList(it)
         }
       }
       169.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FeliCaStatusFlagPigeon.fromList(it)
+          NfcBarcodePigeon.fromList(it)
         }
       }
       170.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FeliCaReadWithoutEncryptionResponsePigeon.fromList(it)
+          NdefAndroidPigeon.fromList(it)
         }
       }
       171.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FeliCaRequestServiceV2ResponsePigeon.fromList(it)
+          NdefIosPigeon.fromList(it)
         }
       }
       172.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FeliCaRequestSpecificationVersionResponsePigeon.fromList(it)
+          FeliCaPigeon.fromList(it)
         }
       }
       173.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          Iso15693SystemInfoPigeon.fromList(it)
+          Iso7816Pigeon.fromList(it)
         }
       }
       174.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          QueryNdefStatusResponsePigeon.fromList(it)
+          Iso15693Pigeon.fromList(it)
         }
       }
       175.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          VasCommandConfigurationPigeon.fromList(it)
+          MiFarePigeon.fromList(it)
         }
       }
       176.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          VasResponsePigeon.fromList(it)
+          TagPigeon.fromList(it)
         }
       }
       177.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          Iso7816ResponseApduPigeon.fromList(it)
+        }
+      }
+      178.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          FeliCaPollingResponsePigeon.fromList(it)
+        }
+      }
+      179.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          FeliCaStatusFlagPigeon.fromList(it)
+        }
+      }
+      180.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          FeliCaReadWithoutEncryptionResponsePigeon.fromList(it)
+        }
+      }
+      181.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          FeliCaRequestServiceV2ResponsePigeon.fromList(it)
+        }
+      }
+      182.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          FeliCaRequestSpecificationVersionResponsePigeon.fromList(it)
+        }
+      }
+      183.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          Iso15693SystemInfoPigeon.fromList(it)
+        }
+      }
+      184.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          QueryNdefStatusResponsePigeon.fromList(it)
+        }
+      }
+      185.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          VasCommandConfigurationPigeon.fromList(it)
+        }
+      }
+      186.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          VasResponsePigeon.fromList(it)
+        }
+      }
+      187.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           NfcErrorPigeon.fromList(it)
         }
@@ -2256,184 +2712,224 @@ private open class PigeonPigeonCodec : StandardMessageCodec() {
         stream.write(132)
         writeValue(stream, value.raw.toLong())
       }
-      is AndroidTechPigeon -> {
+      is PollTechPigeon -> {
         stream.write(133)
         writeValue(stream, value.raw.toLong())
       }
-      is TypeNameFormatPigeon -> {
+      is ListenTechPigeon -> {
         stream.write(134)
         writeValue(stream, value.raw.toLong())
       }
-      is MifareClassicTypePigeon -> {
+      is PollingFrameTypePigeon -> {
         stream.write(135)
         writeValue(stream, value.raw.toLong())
       }
-      is MifareUltralightTypePigeon -> {
+      is NfcEventKindPigeon -> {
         stream.write(136)
         writeValue(stream, value.raw.toLong())
       }
-      is NfcBarcodeTypePigeon -> {
+      is NfcInternalErrorPigeon -> {
         stream.write(137)
         writeValue(stream, value.raw.toLong())
       }
-      is MiFareFamilyPigeon -> {
+      is AndroidTechPigeon -> {
         stream.write(138)
         writeValue(stream, value.raw.toLong())
       }
-      is NdefStatusPigeon -> {
+      is TypeNameFormatPigeon -> {
         stream.write(139)
         writeValue(stream, value.raw.toLong())
       }
-      is Iso15693RequestFlagPigeon -> {
+      is MifareClassicTypePigeon -> {
         stream.write(140)
         writeValue(stream, value.raw.toLong())
       }
-      is FeliCaPollingRequestCodePigeon -> {
+      is MifareUltralightTypePigeon -> {
         stream.write(141)
         writeValue(stream, value.raw.toLong())
       }
-      is FeliCaPollingTimeSlotPigeon -> {
+      is NfcBarcodeTypePigeon -> {
         stream.write(142)
         writeValue(stream, value.raw.toLong())
       }
-      is VasModePigeon -> {
+      is MiFareFamilyPigeon -> {
         stream.write(143)
         writeValue(stream, value.raw.toLong())
       }
-      is VasResponseErrorCodePigeon -> {
+      is NdefStatusPigeon -> {
         stream.write(144)
         writeValue(stream, value.raw.toLong())
       }
-      is ErrorSourcePigeon -> {
+      is Iso15693RequestFlagPigeon -> {
         stream.write(145)
         writeValue(stream, value.raw.toLong())
       }
-      is SessionKindPigeon -> {
+      is FeliCaPollingRequestCodePigeon -> {
         stream.write(146)
         writeValue(stream, value.raw.toLong())
       }
-      is AndroidErrorCodePigeon -> {
+      is FeliCaPollingTimeSlotPigeon -> {
         stream.write(147)
         writeValue(stream, value.raw.toLong())
       }
-      is ReaderErrorCodePigeon -> {
+      is VasModePigeon -> {
         stream.write(148)
         writeValue(stream, value.raw.toLong())
       }
-      is NdefRecordPigeon -> {
+      is VasResponseErrorCodePigeon -> {
         stream.write(149)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is NdefMessagePigeon -> {
+      is ErrorSourcePigeon -> {
         stream.write(150)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is SessionConfigPigeon -> {
+      is SessionKindPigeon -> {
         stream.write(151)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is NfcAPigeon -> {
+      is AndroidErrorCodePigeon -> {
         stream.write(152)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is NfcBPigeon -> {
+      is ReaderErrorCodePigeon -> {
         stream.write(153)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is NfcFPigeon -> {
+      is NdefRecordPigeon -> {
         stream.write(154)
         writeValue(stream, value.toList())
       }
-      is NfcVPigeon -> {
+      is NdefMessagePigeon -> {
         stream.write(155)
         writeValue(stream, value.toList())
       }
-      is IsoDepPigeon -> {
+      is SessionConfigPigeon -> {
         stream.write(156)
         writeValue(stream, value.toList())
       }
-      is MifareClassicPigeon -> {
+      is PollingFramePigeon -> {
         stream.write(157)
         writeValue(stream, value.toList())
       }
-      is MifareUltralightPigeon -> {
+      is AvailableNfcAntennaPigeon -> {
         stream.write(158)
         writeValue(stream, value.toList())
       }
-      is NfcBarcodePigeon -> {
+      is NfcAntennaInfoPigeon -> {
         stream.write(159)
         writeValue(stream, value.toList())
       }
-      is NdefAndroidPigeon -> {
+      is NfcEventPigeon -> {
         stream.write(160)
         writeValue(stream, value.toList())
       }
-      is NdefIosPigeon -> {
+      is TagIntentSetupPigeon -> {
         stream.write(161)
         writeValue(stream, value.toList())
       }
-      is FeliCaPigeon -> {
+      is NfcAPigeon -> {
         stream.write(162)
         writeValue(stream, value.toList())
       }
-      is Iso7816Pigeon -> {
+      is NfcBPigeon -> {
         stream.write(163)
         writeValue(stream, value.toList())
       }
-      is Iso15693Pigeon -> {
+      is NfcFPigeon -> {
         stream.write(164)
         writeValue(stream, value.toList())
       }
-      is MiFarePigeon -> {
+      is NfcVPigeon -> {
         stream.write(165)
         writeValue(stream, value.toList())
       }
-      is TagPigeon -> {
+      is IsoDepPigeon -> {
         stream.write(166)
         writeValue(stream, value.toList())
       }
-      is Iso7816ResponseApduPigeon -> {
+      is MifareClassicPigeon -> {
         stream.write(167)
         writeValue(stream, value.toList())
       }
-      is FeliCaPollingResponsePigeon -> {
+      is MifareUltralightPigeon -> {
         stream.write(168)
         writeValue(stream, value.toList())
       }
-      is FeliCaStatusFlagPigeon -> {
+      is NfcBarcodePigeon -> {
         stream.write(169)
         writeValue(stream, value.toList())
       }
-      is FeliCaReadWithoutEncryptionResponsePigeon -> {
+      is NdefAndroidPigeon -> {
         stream.write(170)
         writeValue(stream, value.toList())
       }
-      is FeliCaRequestServiceV2ResponsePigeon -> {
+      is NdefIosPigeon -> {
         stream.write(171)
         writeValue(stream, value.toList())
       }
-      is FeliCaRequestSpecificationVersionResponsePigeon -> {
+      is FeliCaPigeon -> {
         stream.write(172)
         writeValue(stream, value.toList())
       }
-      is Iso15693SystemInfoPigeon -> {
+      is Iso7816Pigeon -> {
         stream.write(173)
         writeValue(stream, value.toList())
       }
-      is QueryNdefStatusResponsePigeon -> {
+      is Iso15693Pigeon -> {
         stream.write(174)
         writeValue(stream, value.toList())
       }
-      is VasCommandConfigurationPigeon -> {
+      is MiFarePigeon -> {
         stream.write(175)
         writeValue(stream, value.toList())
       }
-      is VasResponsePigeon -> {
+      is TagPigeon -> {
         stream.write(176)
         writeValue(stream, value.toList())
       }
-      is NfcErrorPigeon -> {
+      is Iso7816ResponseApduPigeon -> {
         stream.write(177)
+        writeValue(stream, value.toList())
+      }
+      is FeliCaPollingResponsePigeon -> {
+        stream.write(178)
+        writeValue(stream, value.toList())
+      }
+      is FeliCaStatusFlagPigeon -> {
+        stream.write(179)
+        writeValue(stream, value.toList())
+      }
+      is FeliCaReadWithoutEncryptionResponsePigeon -> {
+        stream.write(180)
+        writeValue(stream, value.toList())
+      }
+      is FeliCaRequestServiceV2ResponsePigeon -> {
+        stream.write(181)
+        writeValue(stream, value.toList())
+      }
+      is FeliCaRequestSpecificationVersionResponsePigeon -> {
+        stream.write(182)
+        writeValue(stream, value.toList())
+      }
+      is Iso15693SystemInfoPigeon -> {
+        stream.write(183)
+        writeValue(stream, value.toList())
+      }
+      is QueryNdefStatusResponsePigeon -> {
+        stream.write(184)
+        writeValue(stream, value.toList())
+      }
+      is VasCommandConfigurationPigeon -> {
+        stream.write(185)
+        writeValue(stream, value.toList())
+      }
+      is VasResponsePigeon -> {
+        stream.write(186)
+        writeValue(stream, value.toList())
+      }
+      is NfcErrorPigeon -> {
+        stream.write(187)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -2622,6 +3118,28 @@ interface NfcAndroidHostApi {
   fun disableForegroundDispatch()
   /** The tag whose intent launched the app, if any. Consumed by the first call. */
   fun takeInitialTag(): TagPigeon?
+  /**
+   * Restricts what the controller polls for and answers as, for as long as the activity is
+   * in the foreground. API 35 and above.
+   */
+  fun setDiscoveryTechnology(poll: List<PollTechPigeon>, listen: List<ListenTechPigeon>, callback: (Result<Unit>) -> Unit)
+  fun resetDiscoveryTechnology(callback: (Result<Unit>) -> Unit)
+  /**
+   * Where the antennas are, so an app can say where to hold the tag. API 34 and above;
+   * null below, and on a device that publishes no geometry.
+   */
+  fun getAntennaInfo(): NfcAntennaInfoPigeon?
+  /** Whether the device implements the Android 16 tag-scan allowlist. */
+  fun isTagIntentAppPreferenceSupported(): Boolean
+  /** Whether the user has allowed this app to be launched by a tag. True below API 36. */
+  fun isTagIntentAllowed(): Boolean
+  /**
+   * Opens the system screen where the user changes that. False when there is no activity
+   * to start it from, or the device has no such screen.
+   */
+  fun openTagIntentPreferenceSettings(): Boolean
+  /** Everything that decides whether a tag *intent* can reach this app, in one call. */
+  fun checkTagIntentSetup(): TagIntentSetupPigeon
   fun transceive(handle: String, tech: AndroidTechPigeon, data: ByteArray, callback: (Result<ByteArray>) -> Unit)
   fun getMaxTransceiveLength(handle: String, tech: AndroidTechPigeon, callback: (Result<Long>) -> Unit)
   fun getTimeout(handle: String, tech: AndroidTechPigeon, callback: (Result<Long>) -> Unit)
@@ -2658,6 +3176,35 @@ interface NfcAndroidHostApi {
    * it rather than the user's default wallet.
    */
   fun hceSetPreferredService(preferred: Boolean)
+  fun hceIsObserveModeSupported(): Boolean
+  fun hceIsObserveModeEnabled(): Boolean
+  /**
+   * Stops the device answering readers and starts delivering their polling frames instead.
+   * Only the preferred service may change this, so pair it with [hceSetPreferredService].
+   */
+  fun hceSetObserveModeEnabled(enabled: Boolean, callback: (Result<Boolean>) -> Unit)
+  /**
+   * Whether the service should come up in observe mode whenever it becomes preferred,
+   * rather than needing [hceSetObserveModeEnabled] each time.
+   */
+  fun hceSetDefaultToObserveMode(shouldDefault: Boolean, callback: (Result<Boolean>) -> Unit)
+  /**
+   * Delivers polling frames whose bytes are exactly [filter], as uppercase hex.
+   *
+   * With [autoTransact] the platform leaves observe mode by itself on a match, so the
+   * exchange that follows is answered rather than merely watched.
+   */
+  fun hceRegisterPollingLoopFilter(filter: String, autoTransact: Boolean, callback: (Result<Boolean>) -> Unit)
+  /**
+   * As [hceRegisterPollingLoopFilter], but [pattern] is a regular expression matched
+   * against the frame's hex.
+   */
+  fun hceRegisterPollingLoopPatternFilter(pattern: String, autoTransact: Boolean, callback: (Result<Boolean>) -> Unit)
+  fun hceRemovePollingLoopFilter(filter: String, callback: (Result<Boolean>) -> Unit)
+  fun hceRemovePollingLoopPatternFilter(pattern: String, callback: (Result<Boolean>) -> Unit)
+  /** Starts delivering `onNfcEvent`. False on a device below API 36. */
+  fun enableNfcEvents(callback: (Result<Boolean>) -> Unit)
+  fun disableNfcEvents(callback: (Result<Unit>) -> Unit)
 
   companion object {
     /** The codec used by NfcAndroidHostApi. */
@@ -2788,6 +3335,118 @@ interface NfcAndroidHostApi {
           channel.setMessageHandler { _, reply ->
             val wrapped: List<Any?> = try {
               listOf(api.takeInitialTag())
+            } catch (exception: Throwable) {
+              PigeonPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.setDiscoveryTechnology$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val pollArg = args[0] as List<PollTechPigeon>
+            val listenArg = args[1] as List<ListenTechPigeon>
+            api.setDiscoveryTechnology(pollArg, listenArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(PigeonPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.resetDiscoveryTechnology$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.resetDiscoveryTechnology{ result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(PigeonPigeonUtils.wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.getAntennaInfo$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.getAntennaInfo())
+            } catch (exception: Throwable) {
+              PigeonPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isTagIntentAppPreferenceSupported$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.isTagIntentAppPreferenceSupported())
+            } catch (exception: Throwable) {
+              PigeonPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isTagIntentAllowed$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.isTagIntentAllowed())
+            } catch (exception: Throwable) {
+              PigeonPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.openTagIntentPreferenceSettings$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.openTagIntentPreferenceSettings())
+            } catch (exception: Throwable) {
+              PigeonPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.checkTagIntentSetup$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.checkTagIntentSetup())
             } catch (exception: Throwable) {
               PigeonPigeonUtils.wrapError(exception)
             }
@@ -3230,6 +3889,193 @@ interface NfcAndroidHostApi {
               PigeonPigeonUtils.wrapError(exception)
             }
             reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsObserveModeSupported$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.hceIsObserveModeSupported())
+            } catch (exception: Throwable) {
+              PigeonPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsObserveModeEnabled$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.hceIsObserveModeEnabled())
+            } catch (exception: Throwable) {
+              PigeonPigeonUtils.wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSetObserveModeEnabled$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val enabledArg = args[0] as Boolean
+            api.hceSetObserveModeEnabled(enabledArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(PigeonPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSetDefaultToObserveMode$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val shouldDefaultArg = args[0] as Boolean
+            api.hceSetDefaultToObserveMode(shouldDefaultArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(PigeonPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRegisterPollingLoopFilter$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val filterArg = args[0] as String
+            val autoTransactArg = args[1] as Boolean
+            api.hceRegisterPollingLoopFilter(filterArg, autoTransactArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(PigeonPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRegisterPollingLoopPatternFilter$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val patternArg = args[0] as String
+            val autoTransactArg = args[1] as Boolean
+            api.hceRegisterPollingLoopPatternFilter(patternArg, autoTransactArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(PigeonPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRemovePollingLoopFilter$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val filterArg = args[0] as String
+            api.hceRemovePollingLoopFilter(filterArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(PigeonPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRemovePollingLoopPatternFilter$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val patternArg = args[0] as String
+            api.hceRemovePollingLoopPatternFilter(patternArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(PigeonPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.enableNfcEvents$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.enableNfcEvents{ result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(PigeonPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.disableNfcEvents$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.disableNfcEvents{ result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(PigeonPigeonUtils.wrapError(error))
+              } else {
+                reply.reply(PigeonPigeonUtils.wrapResult(null))
+              }
+            }
           }
         } else {
           channel.setMessageHandler(null)
@@ -4326,6 +5172,46 @@ class NfcFlutterApi(private val binaryMessenger: BinaryMessenger, private val me
     val channelName = "dev.flutter.pigeon.nfc_util.NfcFlutterApi.onHceDeactivated$separatedMessageChannelSuffix"
     val channel = BasicMessageChannel<Any?>(binaryMessenger, channelName, codec)
     channel.send(listOf(reasonArg)) {
+      if (it is List<*>) {
+        if (it.size > 1) {
+          callback(Result.failure(FlutterError(it[0] as String, it[1] as String, it[2] as String?)))
+        } else {
+          callback(Result.success(Unit))
+        }
+      } else {
+        callback(Result.failure(PigeonPigeonUtils.createConnectionError(channelName)))
+      } 
+    }
+  }
+  /**
+   * Android only. Frames from a reader's polling loop, while observe mode is on.
+   *
+   * Batched by the platform: one call can carry a whole loop.
+   */
+  fun onPollingFrames(framesArg: List<PollingFramePigeon>, callback: (Result<Unit>) -> Unit)
+{
+    val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
+    val channelName = "dev.flutter.pigeon.nfc_util.NfcFlutterApi.onPollingFrames$separatedMessageChannelSuffix"
+    val channel = BasicMessageChannel<Any?>(binaryMessenger, channelName, codec)
+    channel.send(listOf(framesArg)) {
+      if (it is List<*>) {
+        if (it.size > 1) {
+          callback(Result.failure(FlutterError(it[0] as String, it[1] as String, it[2] as String?)))
+        } else {
+          callback(Result.success(Unit))
+        }
+      } else {
+        callback(Result.failure(PigeonPigeonUtils.createConnectionError(channelName)))
+      } 
+    }
+  }
+  /** Android only. A card-emulation event, once `enableNfcEvents` has been called. */
+  fun onNfcEvent(eventArg: NfcEventPigeon, callback: (Result<Unit>) -> Unit)
+{
+    val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
+    val channelName = "dev.flutter.pigeon.nfc_util.NfcFlutterApi.onNfcEvent$separatedMessageChannelSuffix"
+    val channel = BasicMessageChannel<Any?>(binaryMessenger, channelName, codec)
+    channel.send(listOf(eventArg)) {
       if (it is List<*>) {
         if (it.size > 1) {
           callback(Result.failure(FlutterError(it[0] as String, it[1] as String, it[2] as String?)))

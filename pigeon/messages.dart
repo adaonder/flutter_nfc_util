@@ -41,6 +41,40 @@ enum AdapterStatePigeon { off, turningOn, on, turningOff }
 /// `NfcAdapter.FLAG_READER_*`. Android only.
 enum ReaderFlagPigeon { nfcA, nfcB, nfcF, nfcV, nfcBarcode, noPlatformSounds, skipNdefCheck }
 
+/// What `NfcAdapter.setDiscoveryTechnology` polls for. Android only, API 35 and above.
+///
+/// [disable] and [keep] are not technologies and do not combine with one: the platform
+/// spells them as `FLAG_READER_DISABLE` (no bits at all) and `FLAG_READER_KEEP` (bit 31),
+/// so a set holding either alongside a technology has no meaningful reading.
+enum PollTechPigeon { nfcA, nfcB, nfcF, nfcV, disable, keep }
+
+/// What `NfcAdapter.setDiscoveryTechnology` listens as. Android only, API 35 and above.
+///
+/// There is no NFC-V entry: the platform offers `FLAG_LISTEN_NFC_PASSIVE_A`, `_B` and `_F`
+/// only. See [PollTechPigeon] for [disable] and [keep].
+enum ListenTechPigeon { nfcA, nfcB, nfcF, disable, keep }
+
+/// `PollingFrame.POLLING_LOOP_TYPE_*`. Android only, API 35 and above.
+enum PollingFrameTypePigeon { a, b, f, off, on, unknown }
+
+/// Which `CardEmulation.NfcEventCallback` method fired. Android only, API 36 and above.
+///
+/// One flat kind rather than seven callbacks: the interface gains methods with the platform
+/// -- API 37 adds `onOffHostAidSelected` -- and a single event class absorbs those without a
+/// change to the wire.
+enum NfcEventKindPigeon {
+  preferredServiceChanged,
+  observeModeStateChanged,
+  aidConflictOccurred,
+  aidNotRouted,
+  nfcStateChanged,
+  remoteFieldChanged,
+  internalError,
+}
+
+/// `CardEmulation.NFC_INTERNAL_ERROR_*`. Android only, API 36 and above.
+enum NfcInternalErrorPigeon { unknown, nfcCrashRestart, nfcHardwareError, commandTimeout }
+
 /// Selects which `android.nfc.tech` class a tag operation runs against.
 ///
 /// Collapsing the technology into a parameter is what lets one `transceive` replace the
@@ -184,6 +218,95 @@ class SessionConfigPigeon {
 
   /// Android. `EXTRA_READER_PRESENCE_CHECK_DELAY`, in milliseconds. 2.x hardcoded 250.
   late int presenceCheckDelayMillis;
+}
+
+// ---------------------------------------------------------------------------------------
+// Adapter and card-emulation state
+// ---------------------------------------------------------------------------------------
+
+/// One frame of the reader's polling loop, delivered while observe mode is on.
+///
+/// Android only, API 35 and above.
+class PollingFramePigeon {
+  late PollingFrameTypePigeon type;
+
+  /// The frame bytes. Empty for the field-on and field-off frames, which carry no data.
+  late Uint8List data;
+
+  /// The controller's own measure of field strength, in vendor-defined units. Zero on a
+  /// device whose stack does not report it.
+  late int vendorSpecificGain;
+
+  /// `SystemClock.uptimeMillis` when the controller saw the frame, wrapping at 2^32.
+  late int timestamp;
+
+  /// Whether this frame matched a filter registered with `autoTransact`, which takes the
+  /// device out of observe mode for the exchange that follows.
+  late bool triggeredAutoTransact;
+}
+
+/// One antenna's position, in millimetres from the top-left of the *back* of the device
+/// held face up in its natural orientation.
+class AvailableNfcAntennaPigeon {
+  late int locationX;
+  late int locationY;
+}
+
+/// `NfcAdapter.getNfcAntennaInfo`. Android only, API 34 and above.
+class NfcAntennaInfoPigeon {
+  late int deviceWidth;
+  late int deviceHeight;
+
+  /// True for a foldable, where the coordinates describe the device unfolded.
+  late bool deviceFoldable;
+
+  /// Empty on a device that reports NFC but publishes no antenna geometry.
+  late List<AvailableNfcAntennaPigeon> availableNfcAntennas;
+}
+
+/// One `CardEmulation.NfcEventCallback` notification.
+///
+/// Flat rather than a union: which optional fields are set follows from [kind], and Pigeon
+/// has no sealed-class support to express that on both sides.
+class NfcEventPigeon {
+  late NfcEventKindPigeon kind;
+
+  /// Set for [NfcEventKindPigeon.preferredServiceChanged],
+  /// [NfcEventKindPigeon.observeModeStateChanged] and
+  /// [NfcEventKindPigeon.remoteFieldChanged].
+  bool? enabled;
+
+  /// Set for [NfcEventKindPigeon.aidConflictOccurred] and
+  /// [NfcEventKindPigeon.aidNotRouted].
+  String? aid;
+
+  /// Set for [NfcEventKindPigeon.nfcStateChanged].
+  AdapterStatePigeon? adapterState;
+
+  /// Set for [NfcEventKindPigeon.internalError].
+  NfcInternalErrorPigeon? internalError;
+}
+
+/// What the platform can tell an app about whether tag *intents* will reach it.
+///
+/// Android 16 gave the user a per-app "launch via NFC" switch, and Android 17 made the
+/// receiving activity's `android:permission` load-bearing. Both fail silently -- the tap
+/// simply does nothing -- so this exists to turn that into something an app can report.
+class TagIntentSetupPigeon {
+  /// True on API 37 and above, where an activity with an NFC intent filter is only
+  /// dispatched to when it declares `android.permission.DISPATCH_NFC_MESSAGE`.
+  late bool dispatchPermissionRequired;
+
+  /// Activities in this package that declare an NFC intent filter without that permission.
+  /// Always empty when [dispatchPermissionRequired] is false.
+  late List<String> unguardedActivities;
+
+  /// Whether the user has this app on the tag-scan allowlist. True below API 36, which has
+  /// no allowlist.
+  late bool tagIntentAllowed;
+
+  /// Whether the device implements the allowlist at all.
+  late bool tagIntentPreferenceSupported;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -458,6 +581,31 @@ abstract class NfcAndroidHostApi {
   /// The tag whose intent launched the app, if any. Consumed by the first call.
   TagPigeon? takeInitialTag();
 
+  /// Restricts what the controller polls for and answers as, for as long as the activity is
+  /// in the foreground. API 35 and above.
+  @async
+  void setDiscoveryTechnology(List<PollTechPigeon> poll, List<ListenTechPigeon> listen);
+
+  @async
+  void resetDiscoveryTechnology();
+
+  /// Where the antennas are, so an app can say where to hold the tag. API 34 and above;
+  /// null below, and on a device that publishes no geometry.
+  NfcAntennaInfoPigeon? getAntennaInfo();
+
+  /// Whether the device implements the Android 16 tag-scan allowlist.
+  bool isTagIntentAppPreferenceSupported();
+
+  /// Whether the user has allowed this app to be launched by a tag. True below API 36.
+  bool isTagIntentAllowed();
+
+  /// Opens the system screen where the user changes that. False when there is no activity
+  /// to start it from, or the device has no such screen.
+  bool openTagIntentPreferenceSettings();
+
+  /// Everything that decides whether a tag *intent* can reach this app, in one call.
+  TagIntentSetupPigeon checkTagIntentSetup();
+
   @async
   Uint8List transceive(String handle, AndroidTechPigeon tech, Uint8List data);
 
@@ -525,6 +673,48 @@ abstract class NfcAndroidHostApi {
   /// Makes this app the preferred handler while it is in the foreground, so a tap reaches
   /// it rather than the user's default wallet.
   void hceSetPreferredService(bool preferred);
+
+  // Observe mode and polling loop filters. API 35 and above.
+
+  bool hceIsObserveModeSupported();
+  bool hceIsObserveModeEnabled();
+
+  /// Stops the device answering readers and starts delivering their polling frames instead.
+  /// Only the preferred service may change this, so pair it with [hceSetPreferredService].
+  @async
+  bool hceSetObserveModeEnabled(bool enabled);
+
+  /// Whether the service should come up in observe mode whenever it becomes preferred,
+  /// rather than needing [hceSetObserveModeEnabled] each time.
+  @async
+  bool hceSetDefaultToObserveMode(bool shouldDefault);
+
+  /// Delivers polling frames whose bytes are exactly [filter], as uppercase hex.
+  ///
+  /// With [autoTransact] the platform leaves observe mode by itself on a match, so the
+  /// exchange that follows is answered rather than merely watched.
+  @async
+  bool hceRegisterPollingLoopFilter(String filter, bool autoTransact);
+
+  /// As [hceRegisterPollingLoopFilter], but [pattern] is a regular expression matched
+  /// against the frame's hex.
+  @async
+  bool hceRegisterPollingLoopPatternFilter(String pattern, bool autoTransact);
+
+  @async
+  bool hceRemovePollingLoopFilter(String filter);
+
+  @async
+  bool hceRemovePollingLoopPatternFilter(String pattern);
+
+  // Card-emulation events. API 36 and above.
+
+  /// Starts delivering `onNfcEvent`. False on a device below API 36.
+  @async
+  bool enableNfcEvents();
+
+  @async
+  void disableNfcEvents();
 }
 
 /// Implemented on iOS only. The generated Kotlin interface is never registered.
@@ -758,6 +948,14 @@ abstract class NfcFlutterApi {
 
   /// Android only. `HostApduService.onDeactivated` reason.
   void onHceDeactivated(int reason);
+
+  /// Android only. Frames from a reader's polling loop, while observe mode is on.
+  ///
+  /// Batched by the platform: one call can carry a whole loop.
+  void onPollingFrames(List<PollingFramePigeon> frames);
+
+  /// Android only. A card-emulation event, once `enableNfcEvents` has been called.
+  void onNfcEvent(NfcEventPigeon event);
 
   /// Android only. A tag delivered by an intent filter rather than a reader session.
   @async

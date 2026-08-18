@@ -2,12 +2,14 @@ package com.onderada.nfc_util
 
 import android.app.Activity
 import android.app.PendingIntent
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.nfc.NdefMessage
 import android.nfc.NfcAdapter
 import android.nfc.Tag
@@ -17,6 +19,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Parcelable
+import android.provider.Settings
 import android.util.Log
 import android.nfc.tech.IsoDep
 import android.nfc.tech.MifareClassic
@@ -84,6 +87,16 @@ class NfcUtilPlugin :
      */
     private var receiverContext: Context? = null
 
+    /**
+     * The registered [NfcEventBridge], or null.
+     *
+     * Typed `Any?` on purpose: a field whose declared type is `CardEmulation.NfcEventCallback`
+     * names an API 36 interface, and this class is loaded on every device back to API 24.
+     * Keeping the type out of the field descriptor means nothing resolves it until the
+     * registration path, which is already behind a version guard, actually runs.
+     */
+    private var nfcEventCallback: Any? = null
+
     private val adapterStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) return
@@ -119,6 +132,7 @@ class NfcUtilPlugin :
         // on. The isolate that would have received it is going away with the engine.
         teardownSession()
         unregisterAdapterStateReceiver()
+        unregisterNfcEventCallback()
         if (NfcUtilApduService.activeBridge === this) NfcUtilApduService.activeBridge = null
         NfcHostApi.setUp(binding.binaryMessenger, null)
         NfcAndroidHostApi.setUp(binding.binaryMessenger, null)
@@ -399,13 +413,157 @@ class NfcUtilPlugin :
         return tag
     }
 
+    // ---------------------------------------------------------------------------------
+    // NfcAndroidHostApi -- discovery technology, antenna, tag intent preference
+    // ---------------------------------------------------------------------------------
+
+    override fun setDiscoveryTechnology(
+        poll: List<PollTechPigeon>,
+        listen: List<ListenTechPigeon>,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        // Version first: "this phone will never do it" is a more useful answer than "there is
+        // no activity right now", and it is the one that does not change if the app retries.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return callback(unsupported("setDiscoveryTechnology", 35))
+        }
+        val adapter = adapter ?: return callback(failure("unavailable", "This device has no NFC adapter."))
+        val activity = activity ?: return callback(failure("no_activity", "No activity is attached."))
+
+        runCatching {
+            adapter.setDiscoveryTechnology(activity, TagMapper.pollTechFlags(poll), TagMapper.listenTechFlags(listen))
+        }.fold(
+            { callback(Result.success(Unit)) },
+            { callback(failure("unavailable", "Discovery technology could not be set: ${it.message}")) },
+        )
+    }
+
+    override fun resetDiscoveryTechnology(callback: (Result<Unit>) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return callback(unsupported("resetDiscoveryTechnology", 35))
+        }
+        val adapter = adapter ?: return callback(failure("unavailable", "This device has no NFC adapter."))
+        val activity = activity ?: return callback(failure("no_activity", "No activity is attached."))
+
+        runCatching { adapter.resetDiscoveryTechnology(activity) }.fold(
+            { callback(Result.success(Unit)) },
+            { callback(failure("unavailable", "Discovery technology could not be reset: ${it.message}")) },
+        )
+    }
+
+    override fun getAntennaInfo(): NfcAntennaInfoPigeon? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return null
+        // Null rather than an error: "this device does not publish antenna geometry" and "this
+        // OS is too old to ask" are the same answer to the only question a caller has, which
+        // is whether it can draw a hint of where to hold the tag.
+        val info = runCatching { adapter?.nfcAntennaInfo }.getOrNull() ?: return null
+        return NfcAntennaInfoPigeon(
+            deviceWidth = info.deviceWidth.toLong(),
+            deviceHeight = info.deviceHeight.toLong(),
+            deviceFoldable = info.isDeviceFoldable,
+            availableNfcAntennas = info.availableNfcAntennas.map {
+                AvailableNfcAntennaPigeon(locationX = it.locationX.toLong(), locationY = it.locationY.toLong())
+            },
+        )
+    }
+
+    override fun isTagIntentAppPreferenceSupported(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA &&
+            runCatching { adapter?.isTagIntentAppPreferenceSupported }.getOrNull() == true
+
+    override fun isTagIntentAllowed(): Boolean {
+        // True below API 36 because there is no allowlist there to be off: an app that treats
+        // false as "the user has blocked me" must not be told that on a device where the
+        // question does not exist.
+        if (!isTagIntentAppPreferenceSupported()) return true
+        return runCatching { adapter?.isTagIntentAllowed }.getOrNull() != false
+    }
+
+    override fun openTagIntentPreferenceSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return false
+        val activity = activity ?: return false
+        val intent = Intent(NfcAdapter.ACTION_CHANGE_TAG_INTENT_PREFERENCE)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+
+        // Tried rather than resolved first. `resolveActivity` is subject to package-visibility
+        // filtering from API 30, so it can answer null for a Settings screen that would in
+        // fact have opened -- which would report "this device has no such screen" to an app
+        // standing right next to one. Catching the throw is the honest test.
+        return try {
+            activity.startActivity(intent)
+            true
+        } catch (e: ActivityNotFoundException) {
+            Log.w(TAG, "no screen for ACTION_CHANGE_TAG_INTENT_PREFERENCE", e)
+            false
+        }
+    }
+
+    override fun checkTagIntentSetup(): TagIntentSetupPigeon {
+        val required = Build.VERSION.SDK_INT >= ANDROID_17
+        return TagIntentSetupPigeon(
+            dispatchPermissionRequired = required,
+            unguardedActivities = if (required) unguardedNfcActivities() else emptyList(),
+            tagIntentAllowed = isTagIntentAllowed(),
+            tagIntentPreferenceSupported = isTagIntentAppPreferenceSupported(),
+        )
+    }
+
+    /**
+     * Activities in this package that answer an NFC intent without declaring
+     * `android.permission.DISPATCH_NFC_MESSAGE`.
+     *
+     * From Android 17 the NFC system service refuses to dispatch to an activity that is not
+     * protected by that permission. Nothing is logged and no error is raised -- the tap simply
+     * does nothing -- so an app has no way to notice short of testing on the OS. This turns it
+     * into a value.
+     *
+     * PackageManager exposes no way to read an activity's intent filters, so this probes with
+     * intents instead. The probe set is what the NFC service itself can dispatch: a bare
+     * action, which matches a filter with no data; a wildcard MIME type, which `IntentFilter`
+     * matches against any type a filter declares; and the two web schemes. A filter declaring
+     * only some other scheme is the one shape this misses.
+     */
+    private fun unguardedNfcActivities(): List<String> {
+        val context = applicationContext ?: return emptyList()
+        val packageManager = context.packageManager
+        val probes = listOf(
+            Intent(NfcAdapter.ACTION_TECH_DISCOVERED),
+            @Suppress("DEPRECATION") Intent(NfcAdapter.ACTION_TAG_DISCOVERED),
+            Intent(NfcAdapter.ACTION_NDEF_DISCOVERED),
+            Intent(NfcAdapter.ACTION_NDEF_DISCOVERED).setType("*/*"),
+            Intent(NfcAdapter.ACTION_NDEF_DISCOVERED, Uri.parse("https://example.invalid/")),
+            Intent(NfcAdapter.ACTION_NDEF_DISCOVERED, Uri.parse("http://example.invalid/")),
+        )
+
+        val unguarded = sortedSetOf<String>()
+        for (probe in probes) {
+            val matches = runCatching {
+                packageManager.queryIntentActivities(probe.setPackage(context.packageName), 0)
+            }.getOrDefault(emptyList())
+            for (match in matches) {
+                val info = match.activityInfo ?: continue
+                // ActivityInfo.permission already falls back to the application's, so an app
+                // that guards everything at the <application> level reports clean.
+                if (info.permission != DISPATCH_NFC_MESSAGE) unguarded.add(info.name)
+            }
+        }
+        return unguarded.toList()
+    }
+
     /**
      * Pulls a tag out of an NFC intent.
      *
      * Reader mode and intent delivery are separate channels: an app can use one, the other,
      * or both. When a session is running the tag also arrives through [onTagDiscovered],
      * so this only feeds the intent callback.
+     *
+     * ACTION_TAG_DISCOVERED is deprecated as of Android 17 (API 37) in favour of
+     * ACTION_NDEF_DISCOVERED and ACTION_TECH_DISCOVERED, but it is still what every device up
+     * to and including API 36 delivers for a tag no filter matched. Dropping it here would
+     * make a working app go quiet the moment it is rebuilt against a newer compileSdk, so it
+     * stays accepted and the deprecation is suppressed instead.
      */
+    @Suppress("DEPRECATION")
     private fun captureTagFromIntent(intent: Intent?, initial: Boolean) {
         val action = intent?.action ?: return
         if (action != NfcAdapter.ACTION_NDEF_DISCOVERED &&
@@ -689,6 +847,31 @@ class NfcUtilPlugin :
     }
 
     /**
+     * Makes this engine the one that answers for the emulation service, enabling the service
+     * component if it is not already on.
+     *
+     * Observe mode and polling loop filters need this every bit as much as AID registration
+     * does, and for two separate reasons. The platform will not let a *disabled* service
+     * become the preferred service, so `setObserveModeEnabled` simply returned false --
+     * measured on an API 37 device, where the documented sequence without this reported
+     * `setObserveMode=false, isEnabled=false`. And `processPollingFrames` drops the whole
+     * batch when no bridge is claimed, so even a working observe mode would have delivered
+     * nothing to Dart.
+     *
+     * Claiming here rather than on attach is the same rule `hceRegisterAids` follows: the
+     * engine that asked to watch or answer a reader is the one that hears from it, so a
+     * background engine from an unrelated plugin cannot take the stream from the engine on
+     * screen.
+     *
+     * Like [hceRegisterAids], this enables a package component, which is persistent state.
+     * `hceUnregisterAids` is the way back.
+     */
+    private fun claimEmulationService() {
+        setApduServiceEnabled(true)
+        NfcUtilApduService.activeBridge = this
+    }
+
+    /**
      * Turns the emulation service on or off as a package component.
      *
      * `DONT_KILL_APP` because the alternative is restarting the very process that asked.
@@ -712,6 +895,7 @@ class NfcUtilPlugin :
         val emulation = cardEmulation() ?: return
         val activity = activity ?: return
         val component = apduServiceComponent() ?: return
+        if (preferred) claimEmulationService()
         runCatching {
             if (preferred) {
                 emulation.setPreferredService(activity, component)
@@ -719,6 +903,155 @@ class NfcUtilPlugin :
                 emulation.unsetPreferredService(activity)
             }
         }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // NfcAndroidHostApi -- observe mode and polling loop filters (API 35)
+    // ---------------------------------------------------------------------------------
+
+    override fun hceIsObserveModeSupported(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            runCatching { adapter?.isObserveModeSupported }.getOrNull() == true
+
+    override fun hceIsObserveModeEnabled(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            runCatching { adapter?.isObserveModeEnabled }.getOrNull() == true
+
+    override fun hceSetObserveModeEnabled(enabled: Boolean, callback: (Result<Boolean>) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return callback(unsupported("observe mode", 35))
+        }
+        val adapter = adapter ?: return callback(failure("unavailable", "This device has no NFC adapter."))
+        // The service has to exist as far as the platform is concerned before it can be
+        // preferred, and the bridge has to be claimed before a frame can reach Dart.
+        if (enabled) claimEmulationService()
+        // False rather than a throw: the platform itself returns false when the caller is not
+        // the preferred service, and that is the common case an app has to handle rather than
+        // a defect. The Dart doc says to call setPreferredService first.
+        callback(Result.success(runCatching { adapter.setObserveModeEnabled(enabled) }.getOrDefault(false)))
+    }
+
+    override fun hceSetDefaultToObserveMode(shouldDefault: Boolean, callback: (Result<Boolean>) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return callback(unsupported("observe mode", 35))
+        }
+        withCardEmulation(callback, claim = true) { emulation, component ->
+            emulation.setShouldDefaultToObserveModeForService(component, shouldDefault)
+        }
+    }
+
+    override fun hceRegisterPollingLoopFilter(
+        filter: String,
+        autoTransact: Boolean,
+        callback: (Result<Boolean>) -> Unit,
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return callback(unsupported("polling loop filters", 35))
+        }
+        withCardEmulation(callback, claim = true) { emulation, component ->
+            emulation.registerPollingLoopFilterForService(component, filter, autoTransact)
+        }
+    }
+
+    override fun hceRegisterPollingLoopPatternFilter(
+        pattern: String,
+        autoTransact: Boolean,
+        callback: (Result<Boolean>) -> Unit,
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return callback(unsupported("polling loop filters", 35))
+        }
+        withCardEmulation(callback, claim = true) { emulation, component ->
+            emulation.registerPollingLoopPatternFilterForService(component, pattern, autoTransact)
+        }
+    }
+
+    override fun hceRemovePollingLoopFilter(filter: String, callback: (Result<Boolean>) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return callback(unsupported("polling loop filters", 35))
+        }
+        withCardEmulation(callback) { emulation, component ->
+            emulation.removePollingLoopFilterForService(component, filter)
+        }
+    }
+
+    override fun hceRemovePollingLoopPatternFilter(pattern: String, callback: (Result<Boolean>) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return callback(unsupported("polling loop filters", 35))
+        }
+        withCardEmulation(callback) { emulation, component ->
+            emulation.removePollingLoopPatternFilterForService(component, pattern)
+        }
+    }
+
+    /**
+     * Resolves the emulation service and its component, then reports what [body] returned.
+     *
+     * [claim] for the calls that register something against the service, which the platform
+     * only accepts for a service it can see.
+     */
+    private fun withCardEmulation(
+        callback: (Result<Boolean>) -> Unit,
+        claim: Boolean = false,
+        body: (CardEmulation, ComponentName) -> Boolean,
+    ) {
+        val emulation = cardEmulation() ?: return callback(failure("unavailable", "Card emulation is unavailable."))
+        val component = apduServiceComponent() ?: return callback(failure("unavailable", "No application context."))
+        if (claim) claimEmulationService()
+        runCatching { body(emulation, component) }.fold(
+            { callback(Result.success(it)) },
+            { callback(Result.failure(FlutterErrorOf("unavailable", it.message ?: ""))) },
+        )
+    }
+
+    override fun onPollingFrames(frames: List<PollingFramePigeon>) {
+        mainHandler.post { flutterApi?.onPollingFrames(frames) {} }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // NfcAndroidHostApi -- card emulation events (API 36)
+    // ---------------------------------------------------------------------------------
+
+    override fun enableNfcEvents(callback: (Result<Boolean>) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return callback(Result.success(false))
+        if (nfcEventCallback != null) return callback(Result.success(true))
+        val emulation = cardEmulation() ?: return callback(failure("unavailable", "Card emulation is unavailable."))
+
+        val bridge = NfcEventBridge(this)
+        // Delivered straight onto the main thread, so the router does not have to hop: the
+        // channel is main-thread only and these events are small and infrequent.
+        runCatching { emulation.registerNfcEventCallback({ command -> mainHandler.post(command) }, bridge) }.fold(
+            {
+                nfcEventCallback = bridge
+                callback(Result.success(true))
+            },
+            { callback(Result.failure(FlutterErrorOf("unavailable", it.message ?: ""))) },
+        )
+    }
+
+    override fun disableNfcEvents(callback: (Result<Unit>) -> Unit) {
+        unregisterNfcEventCallback()
+        callback(Result.success(Unit))
+    }
+
+    /**
+     * Drops the card-emulation event registration, if there is one.
+     *
+     * Called from every teardown as well as from Dart. The registration is held by the
+     * framework against an Executor that posts to this plugin's handler, so leaving it in
+     * place would keep the plugin -- and through it the engine -- alive after detach. That is
+     * the same leak the `activeBridge` comment above exists to prevent.
+     */
+    private fun unregisterNfcEventCallback() {
+        val bridge = nfcEventCallback ?: return
+        nfcEventCallback = null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return
+        runCatching { cardEmulation()?.unregisterNfcEventCallback(bridge as CardEmulation.NfcEventCallback) }
+    }
+
+    /** Called by [NfcEventBridge] on the main thread. */
+    internal fun emitNfcEvent(event: NfcEventPigeon) {
+        flutterApi?.onNfcEvent(event) {}
     }
 
     private fun cardEmulation(): CardEmulation? = adapter?.let { runCatching { CardEmulation.getInstance(it) }.getOrNull() }
@@ -851,9 +1184,72 @@ class NfcUtilPlugin :
     private fun <T> failure(code: AndroidErrorCodePigeon, message: String): Result<T> =
         Result.failure(FlutterErrorOf(wireName(code), message))
 
+    /**
+     * The refusal every capability added after API 24 uses when the device is too old.
+     *
+     * A distinct code rather than "unavailable" so an app can tell "this phone will never do
+     * it" from "the adapter is busy or missing", and a thrown failure rather than a silent
+     * no-op so the difference cannot hide until someone reports that a feature does nothing
+     * on their phone.
+     */
+    private fun <T> unsupported(what: String, minSdk: Int): Result<T> = Result.failure(
+        FlutterErrorOf(
+            "unsupported_api_level",
+            "$what needs Android API $minSdk; this device is ${Build.VERSION.SDK_INT}.",
+        ),
+    )
+
     private companion object {
         const val TAG = "NfcUtilPlugin"
+
+        /**
+         * API 37. There is no `Build.VERSION_CODES` constant for it in compileSdk 36, and the
+         * plugin deliberately does not move to 37 in this release -- see the README.
+         */
+        const val ANDROID_17 = 37
+
+        /**
+         * Required on an activity that receives NFC intents from Android 17. Spelled out
+         * rather than referenced, for the same reason: `Manifest.permission` has no such field
+         * in compileSdk 36.
+         */
+        const val DISPATCH_NFC_MESSAGE = "android.permission.DISPATCH_NFC_MESSAGE"
     }
+}
+
+/**
+ * Forwards `CardEmulation.NfcEventCallback` to the plugin as one flat event.
+ *
+ * A named class rather than an anonymous object so that loading it -- which resolves the API
+ * 36 interface it implements -- happens exactly when one is constructed, which only the
+ * version-guarded registration path does.
+ *
+ * Holds the plugin strongly, which is why `unregisterNfcEventCallback` runs on every teardown:
+ * the framework keeps this alive until it is unregistered.
+ */
+private class NfcEventBridge(private val plugin: NfcUtilPlugin) : CardEmulation.NfcEventCallback {
+    override fun onPreferredServiceChanged(isPreferred: Boolean) =
+        plugin.emitNfcEvent(NfcEventPigeon(kind = NfcEventKindPigeon.PREFERRED_SERVICE_CHANGED, enabled = isPreferred))
+
+    override fun onObserveModeStateChanged(isEnabled: Boolean) =
+        plugin.emitNfcEvent(NfcEventPigeon(kind = NfcEventKindPigeon.OBSERVE_MODE_STATE_CHANGED, enabled = isEnabled))
+
+    override fun onAidConflictOccurred(aid: String) =
+        plugin.emitNfcEvent(NfcEventPigeon(kind = NfcEventKindPigeon.AID_CONFLICT_OCCURRED, aid = aid))
+
+    override fun onAidNotRouted(aid: String) =
+        plugin.emitNfcEvent(NfcEventPigeon(kind = NfcEventKindPigeon.AID_NOT_ROUTED, aid = aid))
+
+    override fun onNfcStateChanged(state: Int) = plugin.emitNfcEvent(
+        NfcEventPigeon(kind = NfcEventKindPigeon.NFC_STATE_CHANGED, adapterState = TagMapper.adapterState(state)),
+    )
+
+    override fun onRemoteFieldChanged(isDetected: Boolean) =
+        plugin.emitNfcEvent(NfcEventPigeon(kind = NfcEventKindPigeon.REMOTE_FIELD_CHANGED, enabled = isDetected))
+
+    override fun onInternalErrorReported(errorType: Int) = plugin.emitNfcEvent(
+        NfcEventPigeon(kind = NfcEventKindPigeon.INTERNAL_ERROR, internalError = TagMapper.internalError(errorType)),
+    )
 }
 
 /** A [FlutterError] with the fields filled in, since the generated constructor is positional. */

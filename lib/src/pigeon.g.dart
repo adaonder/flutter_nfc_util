@@ -9,14 +9,22 @@ import 'dart:typed_data' show Float64List, Int32List, Int64List;
 import 'package:flutter/services.dart';
 import 'package:meta/meta.dart' show immutable, protected, visibleForTesting;
 
-Object? _extractReplyValueOrThrow(List<Object?>? replyList, String channelName, {required bool isNullValid}) {
+Object? _extractReplyValueOrThrow(
+  List<Object?>? replyList,
+  String channelName, {
+  required bool isNullValid,
+}) {
   if (replyList == null) {
     throw PlatformException(
       code: 'channel-error',
       message: 'Unable to establish connection on channel: "$channelName".',
     );
   } else if (replyList.length > 1) {
-    throw PlatformException(code: replyList[0]! as String, message: replyList[1] as String?, details: replyList[2]);
+    throw PlatformException(
+      code: replyList[0]! as String,
+      message: replyList[1] as String?,
+      details: replyList[2],
+    );
   } else if (!isNullValid && (replyList.isNotEmpty && replyList[0] == null)) {
     throw PlatformException(
       code: 'null-error',
@@ -97,16 +105,96 @@ int _deepHash(Object? value) {
 }
 
 /// The kind of tag a session polls for.
-enum PollingOptionPigeon { iso14443, iso15693, iso18092 }
+enum PollingOptionPigeon {
+  iso14443,
+  iso15693,
+  iso18092,
+}
 
 /// Whether NFC can be used on this device right now.
-enum AvailabilityPigeon { enabled, disabled, unsupported }
+enum AvailabilityPigeon {
+  enabled,
+  disabled,
+  unsupported,
+}
 
 /// `NfcAdapter.ACTION_ADAPTER_STATE_CHANGED` states. Android only.
-enum AdapterStatePigeon { off, turningOn, on, turningOff }
+enum AdapterStatePigeon {
+  off,
+  turningOn,
+  on,
+  turningOff,
+}
 
 /// `NfcAdapter.FLAG_READER_*`. Android only.
-enum ReaderFlagPigeon { nfcA, nfcB, nfcF, nfcV, nfcBarcode, noPlatformSounds, skipNdefCheck }
+enum ReaderFlagPigeon {
+  nfcA,
+  nfcB,
+  nfcF,
+  nfcV,
+  nfcBarcode,
+  noPlatformSounds,
+  skipNdefCheck,
+}
+
+/// What `NfcAdapter.setDiscoveryTechnology` polls for. Android only, API 35 and above.
+///
+/// [disable] and [keep] are not technologies and do not combine with one: the platform
+/// spells them as `FLAG_READER_DISABLE` (no bits at all) and `FLAG_READER_KEEP` (bit 31),
+/// so a set holding either alongside a technology has no meaningful reading.
+enum PollTechPigeon {
+  nfcA,
+  nfcB,
+  nfcF,
+  nfcV,
+  disable,
+  keep,
+}
+
+/// What `NfcAdapter.setDiscoveryTechnology` listens as. Android only, API 35 and above.
+///
+/// There is no NFC-V entry: the platform offers `FLAG_LISTEN_NFC_PASSIVE_A`, `_B` and `_F`
+/// only. See [PollTechPigeon] for [disable] and [keep].
+enum ListenTechPigeon {
+  nfcA,
+  nfcB,
+  nfcF,
+  disable,
+  keep,
+}
+
+/// `PollingFrame.POLLING_LOOP_TYPE_*`. Android only, API 35 and above.
+enum PollingFrameTypePigeon {
+  a,
+  b,
+  f,
+  off,
+  on,
+  unknown,
+}
+
+/// Which `CardEmulation.NfcEventCallback` method fired. Android only, API 36 and above.
+///
+/// One flat kind rather than seven callbacks: the interface gains methods with the platform
+/// -- API 37 adds `onOffHostAidSelected` -- and a single event class absorbs those without a
+/// change to the wire.
+enum NfcEventKindPigeon {
+  preferredServiceChanged,
+  observeModeStateChanged,
+  aidConflictOccurred,
+  aidNotRouted,
+  nfcStateChanged,
+  remoteFieldChanged,
+  internalError,
+}
+
+/// `CardEmulation.NFC_INTERNAL_ERROR_*`. Android only, API 36 and above.
+enum NfcInternalErrorPigeon {
+  unknown,
+  nfcCrashRestart,
+  nfcHardwareError,
+  commandTimeout,
+}
 
 /// Selects which `android.nfc.tech` class a tag operation runs against.
 ///
@@ -114,31 +202,88 @@ enum ReaderFlagPigeon { nfcA, nfcB, nfcF, nfcV, nfcBarcode, noPlatformSounds, sk
 /// seven the 2.x channel had, and one `getMaxTransceiveLength` replace seven more.
 /// Only the technologies that answer a raw exchange. NDEF and NdefFormatable are addressed
 /// by their own methods, which take no technology.
-enum AndroidTechPigeon { nfcA, nfcB, nfcF, nfcV, isoDep, mifareClassic, mifareUltralight }
+enum AndroidTechPigeon {
+  nfcA,
+  nfcB,
+  nfcF,
+  nfcV,
+  isoDep,
+  mifareClassic,
+  mifareUltralight,
+}
 
 /// NDEF Type-Name-Format, as defined by the NFC Forum. Ordinals match the on-tag values
 /// 0x00..0x06.
-enum TypeNameFormatPigeon { empty, wellKnown, media, absoluteUri, external, unknown, unchanged }
+enum TypeNameFormatPigeon {
+  empty,
+  wellKnown,
+  media,
+  absoluteUri,
+  external,
+  unknown,
+  unchanged,
+}
 
-enum MifareClassicTypePigeon { classic, plus, pro, unknown }
+enum MifareClassicTypePigeon {
+  classic,
+  plus,
+  pro,
+  unknown,
+}
 
-enum MifareUltralightTypePigeon { ultralight, ultralightC, unknown }
+enum MifareUltralightTypePigeon {
+  ultralight,
+  ultralightC,
+  unknown,
+}
 
-enum NfcBarcodeTypePigeon { kovio, unknown }
+enum NfcBarcodeTypePigeon {
+  kovio,
+  unknown,
+}
 
-enum MiFareFamilyPigeon { unknown, ultralight, plus, desfire }
+enum MiFareFamilyPigeon {
+  unknown,
+  ultralight,
+  plus,
+  desfire,
+}
 
 /// `NFCNDEFStatus`. iOS only.
-enum NdefStatusPigeon { notSupported, readOnly, readWrite }
+enum NdefStatusPigeon {
+  notSupported,
+  readOnly,
+  readWrite,
+}
 
-enum Iso15693RequestFlagPigeon { address, dualSubCarriers, highDataRate, option, protocolExtension, select }
+enum Iso15693RequestFlagPigeon {
+  address,
+  dualSubCarriers,
+  highDataRate,
+  option,
+  protocolExtension,
+  select,
+}
 
-enum FeliCaPollingRequestCodePigeon { noRequest, systemCode, communicationPerformance }
+enum FeliCaPollingRequestCodePigeon {
+  noRequest,
+  systemCode,
+  communicationPerformance,
+}
 
-enum FeliCaPollingTimeSlotPigeon { max1, max2, max4, max8, max16 }
+enum FeliCaPollingTimeSlotPigeon {
+  max1,
+  max2,
+  max4,
+  max8,
+  max16,
+}
 
 /// `NFCVASCommandConfiguration.Mode`. iOS only.
-enum VasModePigeon { normal, urlOnly }
+enum VasModePigeon {
+  normal,
+  urlOnly,
+}
 
 /// `NFCVASReaderSessionVASResponse.ErrorCode`. iOS only.
 enum VasResponseErrorCodePigeon {
@@ -153,7 +298,10 @@ enum VasResponseErrorCodePigeon {
 }
 
 /// Which platform raised an error, so the two code enums below can be read unambiguously.
-enum ErrorSourcePigeon { android, ios }
+enum ErrorSourcePigeon {
+  android,
+  ios,
+}
 
 /// Which kind of session an event belongs to.
 ///
@@ -161,7 +309,10 @@ enum ErrorSourcePigeon { android, ios }
 /// separate delegates, and the plugin tears them down independently. Without this on the
 /// wire, Dart cannot tell whose error or whose "sheet is up" it just received, and one
 /// family's teardown silently unregisters the other's callbacks.
-enum SessionKindPigeon { tag, vas }
+enum SessionKindPigeon {
+  tag,
+  vas,
+}
 
 /// Typed Android failures.
 ///
@@ -209,7 +360,12 @@ enum ReaderErrorCodePigeon {
 }
 
 class NdefRecordPigeon {
-  NdefRecordPigeon({required this.typeNameFormat, required this.type, required this.identifier, required this.payload});
+  NdefRecordPigeon({
+    required this.typeNameFormat,
+    required this.type,
+    required this.identifier,
+    required this.payload,
+  });
 
   TypeNameFormatPigeon typeNameFormat;
 
@@ -220,7 +376,12 @@ class NdefRecordPigeon {
   Uint8List payload;
 
   List<Object?> _toList() {
-    return <Object?>[typeNameFormat, type, identifier, payload];
+    return <Object?>[
+      typeNameFormat,
+      type,
+      identifier,
+      payload,
+    ];
   }
 
   Object encode() {
@@ -263,12 +424,16 @@ class NdefRecordPigeon {
 }
 
 class NdefMessagePigeon {
-  NdefMessagePigeon({required this.records});
+  NdefMessagePigeon({
+    required this.records,
+  });
 
   List<NdefRecordPigeon> records;
 
   List<Object?> _toList() {
-    return <Object?>[records];
+    return <Object?>[
+      records,
+    ];
   }
 
   Object encode() {
@@ -277,7 +442,9 @@ class NdefMessagePigeon {
 
   static NdefMessagePigeon decode(Object result) {
     result as List<Object?>;
-    return NdefMessagePigeon(records: (result[0]! as List<Object?>).cast<NdefRecordPigeon>());
+    return NdefMessagePigeon(
+      records: (result[0]! as List<Object?>).cast<NdefRecordPigeon>(),
+    );
   }
 
   @override
@@ -394,8 +561,369 @@ class SessionConfigPigeon {
   }
 }
 
+/// One frame of the reader's polling loop, delivered while observe mode is on.
+///
+/// Android only, API 35 and above.
+class PollingFramePigeon {
+  PollingFramePigeon({
+    required this.type,
+    required this.data,
+    required this.vendorSpecificGain,
+    required this.timestamp,
+    required this.triggeredAutoTransact,
+  });
+
+  PollingFrameTypePigeon type;
+
+  /// The frame bytes. Empty for the field-on and field-off frames, which carry no data.
+  Uint8List data;
+
+  /// The controller's own measure of field strength, in vendor-defined units. Zero on a
+  /// device whose stack does not report it.
+  int vendorSpecificGain;
+
+  /// `SystemClock.uptimeMillis` when the controller saw the frame, wrapping at 2^32.
+  int timestamp;
+
+  /// Whether this frame matched a filter registered with `autoTransact`, which takes the
+  /// device out of observe mode for the exchange that follows.
+  bool triggeredAutoTransact;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      type,
+      data,
+      vendorSpecificGain,
+      timestamp,
+      triggeredAutoTransact,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static PollingFramePigeon decode(Object result) {
+    result as List<Object?>;
+    return PollingFramePigeon(
+      type: result[0]! as PollingFrameTypePigeon,
+      data: result[1]! as Uint8List,
+      vendorSpecificGain: result[2]! as int,
+      timestamp: result[3]! as int,
+      triggeredAutoTransact: result[4]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! PollingFramePigeon || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(type, other.type) &&
+        _deepEquals(data, other.data) &&
+        _deepEquals(vendorSpecificGain, other.vendorSpecificGain) &&
+        _deepEquals(timestamp, other.timestamp) &&
+        _deepEquals(triggeredAutoTransact, other.triggeredAutoTransact);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'PollingFramePigeon(type: $type, data: $data, vendorSpecificGain: $vendorSpecificGain, timestamp: $timestamp, triggeredAutoTransact: $triggeredAutoTransact)';
+  }
+}
+
+/// One antenna's position, in millimetres from the top-left of the *back* of the device
+/// held face up in its natural orientation.
+class AvailableNfcAntennaPigeon {
+  AvailableNfcAntennaPigeon({
+    required this.locationX,
+    required this.locationY,
+  });
+
+  int locationX;
+
+  int locationY;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      locationX,
+      locationY,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static AvailableNfcAntennaPigeon decode(Object result) {
+    result as List<Object?>;
+    return AvailableNfcAntennaPigeon(
+      locationX: result[0]! as int,
+      locationY: result[1]! as int,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! AvailableNfcAntennaPigeon || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(locationX, other.locationX) && _deepEquals(locationY, other.locationY);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'AvailableNfcAntennaPigeon(locationX: $locationX, locationY: $locationY)';
+  }
+}
+
+/// `NfcAdapter.getNfcAntennaInfo`. Android only, API 34 and above.
+class NfcAntennaInfoPigeon {
+  NfcAntennaInfoPigeon({
+    required this.deviceWidth,
+    required this.deviceHeight,
+    required this.deviceFoldable,
+    required this.availableNfcAntennas,
+  });
+
+  int deviceWidth;
+
+  int deviceHeight;
+
+  /// True for a foldable, where the coordinates describe the device unfolded.
+  bool deviceFoldable;
+
+  /// Empty on a device that reports NFC but publishes no antenna geometry.
+  List<AvailableNfcAntennaPigeon> availableNfcAntennas;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      deviceWidth,
+      deviceHeight,
+      deviceFoldable,
+      availableNfcAntennas,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static NfcAntennaInfoPigeon decode(Object result) {
+    result as List<Object?>;
+    return NfcAntennaInfoPigeon(
+      deviceWidth: result[0]! as int,
+      deviceHeight: result[1]! as int,
+      deviceFoldable: result[2]! as bool,
+      availableNfcAntennas: (result[3]! as List<Object?>).cast<AvailableNfcAntennaPigeon>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! NfcAntennaInfoPigeon || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(deviceWidth, other.deviceWidth) &&
+        _deepEquals(deviceHeight, other.deviceHeight) &&
+        _deepEquals(deviceFoldable, other.deviceFoldable) &&
+        _deepEquals(availableNfcAntennas, other.availableNfcAntennas);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'NfcAntennaInfoPigeon(deviceWidth: $deviceWidth, deviceHeight: $deviceHeight, deviceFoldable: $deviceFoldable, availableNfcAntennas: $availableNfcAntennas)';
+  }
+}
+
+/// One `CardEmulation.NfcEventCallback` notification.
+///
+/// Flat rather than a union: which optional fields are set follows from [kind], and Pigeon
+/// has no sealed-class support to express that on both sides.
+class NfcEventPigeon {
+  NfcEventPigeon({
+    required this.kind,
+    this.enabled,
+    this.aid,
+    this.adapterState,
+    this.internalError,
+  });
+
+  NfcEventKindPigeon kind;
+
+  /// Set for [NfcEventKindPigeon.preferredServiceChanged],
+  /// [NfcEventKindPigeon.observeModeStateChanged] and
+  /// [NfcEventKindPigeon.remoteFieldChanged].
+  bool? enabled;
+
+  /// Set for [NfcEventKindPigeon.aidConflictOccurred] and
+  /// [NfcEventKindPigeon.aidNotRouted].
+  String? aid;
+
+  /// Set for [NfcEventKindPigeon.nfcStateChanged].
+  AdapterStatePigeon? adapterState;
+
+  /// Set for [NfcEventKindPigeon.internalError].
+  NfcInternalErrorPigeon? internalError;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      kind,
+      enabled,
+      aid,
+      adapterState,
+      internalError,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static NfcEventPigeon decode(Object result) {
+    result as List<Object?>;
+    return NfcEventPigeon(
+      kind: result[0]! as NfcEventKindPigeon,
+      enabled: result[1] as bool?,
+      aid: result[2] as String?,
+      adapterState: result[3] as AdapterStatePigeon?,
+      internalError: result[4] as NfcInternalErrorPigeon?,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! NfcEventPigeon || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(kind, other.kind) &&
+        _deepEquals(enabled, other.enabled) &&
+        _deepEquals(aid, other.aid) &&
+        _deepEquals(adapterState, other.adapterState) &&
+        _deepEquals(internalError, other.internalError);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'NfcEventPigeon(kind: $kind, enabled: $enabled, aid: $aid, adapterState: $adapterState, internalError: $internalError)';
+  }
+}
+
+/// What the platform can tell an app about whether tag *intents* will reach it.
+///
+/// Android 16 gave the user a per-app "launch via NFC" switch, and Android 17 made the
+/// receiving activity's `android:permission` load-bearing. Both fail silently -- the tap
+/// simply does nothing -- so this exists to turn that into something an app can report.
+class TagIntentSetupPigeon {
+  TagIntentSetupPigeon({
+    required this.dispatchPermissionRequired,
+    required this.unguardedActivities,
+    required this.tagIntentAllowed,
+    required this.tagIntentPreferenceSupported,
+  });
+
+  /// True on API 37 and above, where an activity with an NFC intent filter is only
+  /// dispatched to when it declares `android.permission.DISPATCH_NFC_MESSAGE`.
+  bool dispatchPermissionRequired;
+
+  /// Activities in this package that declare an NFC intent filter without that permission.
+  /// Always empty when [dispatchPermissionRequired] is false.
+  List<String> unguardedActivities;
+
+  /// Whether the user has this app on the tag-scan allowlist. True below API 36, which has
+  /// no allowlist.
+  bool tagIntentAllowed;
+
+  /// Whether the device implements the allowlist at all.
+  bool tagIntentPreferenceSupported;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      dispatchPermissionRequired,
+      unguardedActivities,
+      tagIntentAllowed,
+      tagIntentPreferenceSupported,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static TagIntentSetupPigeon decode(Object result) {
+    result as List<Object?>;
+    return TagIntentSetupPigeon(
+      dispatchPermissionRequired: result[0]! as bool,
+      unguardedActivities: (result[1]! as List<Object?>).cast<String>(),
+      tagIntentAllowed: result[2]! as bool,
+      tagIntentPreferenceSupported: result[3]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! TagIntentSetupPigeon || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(dispatchPermissionRequired, other.dispatchPermissionRequired) &&
+        _deepEquals(unguardedActivities, other.unguardedActivities) &&
+        _deepEquals(tagIntentAllowed, other.tagIntentAllowed) &&
+        _deepEquals(tagIntentPreferenceSupported, other.tagIntentPreferenceSupported);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'TagIntentSetupPigeon(dispatchPermissionRequired: $dispatchPermissionRequired, unguardedActivities: $unguardedActivities, tagIntentAllowed: $tagIntentAllowed, tagIntentPreferenceSupported: $tagIntentPreferenceSupported)';
+  }
+}
+
 class NfcAPigeon {
-  NfcAPigeon({this.atqa, required this.sak, required this.maxTransceiveLength, required this.timeout});
+  NfcAPigeon({
+    this.atqa,
+    required this.sak,
+    required this.maxTransceiveLength,
+    required this.timeout,
+  });
 
   /// Null when the stack did not report the poll bytes: AOSP only populates the tech extras
   /// once it has enough of them, and a target that answered a short SENS_RES has none.
@@ -408,7 +936,12 @@ class NfcAPigeon {
   int timeout;
 
   List<Object?> _toList() {
-    return <Object?>[atqa, sak, maxTransceiveLength, timeout];
+    return <Object?>[
+      atqa,
+      sak,
+      maxTransceiveLength,
+      timeout,
+    ];
   }
 
   Object encode() {
@@ -451,7 +984,11 @@ class NfcAPigeon {
 }
 
 class NfcBPigeon {
-  NfcBPigeon({this.applicationData, this.protocolInfo, required this.maxTransceiveLength});
+  NfcBPigeon({
+    this.applicationData,
+    this.protocolInfo,
+    required this.maxTransceiveLength,
+  });
 
   /// Null when the tag reported no ATQB parameters. AOSP fills these two only when the poll
   /// bytes reach seven, and a B-prime target -- Innovatron, legacy Calypso transit -- answers
@@ -463,7 +1000,11 @@ class NfcBPigeon {
   int maxTransceiveLength;
 
   List<Object?> _toList() {
-    return <Object?>[applicationData, protocolInfo, maxTransceiveLength];
+    return <Object?>[
+      applicationData,
+      protocolInfo,
+      maxTransceiveLength,
+    ];
   }
 
   Object encode() {
@@ -504,7 +1045,12 @@ class NfcBPigeon {
 }
 
 class NfcFPigeon {
-  NfcFPigeon({this.manufacturer, this.systemCode, required this.maxTransceiveLength, required this.timeout});
+  NfcFPigeon({
+    this.manufacturer,
+    this.systemCode,
+    required this.maxTransceiveLength,
+    required this.timeout,
+  });
 
   /// Null when the stack did not report the poll bytes, as for [NfcAPigeon.atqa].
   Uint8List? manufacturer;
@@ -516,7 +1062,12 @@ class NfcFPigeon {
   int timeout;
 
   List<Object?> _toList() {
-    return <Object?>[manufacturer, systemCode, maxTransceiveLength, timeout];
+    return <Object?>[
+      manufacturer,
+      systemCode,
+      maxTransceiveLength,
+      timeout,
+    ];
   }
 
   Object encode() {
@@ -559,7 +1110,11 @@ class NfcFPigeon {
 }
 
 class NfcVPigeon {
-  NfcVPigeon({required this.dsfId, required this.responseFlags, required this.maxTransceiveLength});
+  NfcVPigeon({
+    required this.dsfId,
+    required this.responseFlags,
+    required this.maxTransceiveLength,
+  });
 
   int dsfId;
 
@@ -568,7 +1123,11 @@ class NfcVPigeon {
   int maxTransceiveLength;
 
   List<Object?> _toList() {
-    return <Object?>[dsfId, responseFlags, maxTransceiveLength];
+    return <Object?>[
+      dsfId,
+      responseFlags,
+      maxTransceiveLength,
+    ];
   }
 
   Object encode() {
@@ -628,7 +1187,13 @@ class IsoDepPigeon {
   int timeout;
 
   List<Object?> _toList() {
-    return <Object?>[hiLayerResponse, historicalBytes, isExtendedLengthApduSupported, maxTransceiveLength, timeout];
+    return <Object?>[
+      hiLayerResponse,
+      historicalBytes,
+      isExtendedLengthApduSupported,
+      maxTransceiveLength,
+      timeout,
+    ];
   }
 
   Object encode() {
@@ -695,7 +1260,14 @@ class MifareClassicPigeon {
   int timeout;
 
   List<Object?> _toList() {
-    return <Object?>[type, blockCount, sectorCount, size, maxTransceiveLength, timeout];
+    return <Object?>[
+      type,
+      blockCount,
+      sectorCount,
+      size,
+      maxTransceiveLength,
+      timeout,
+    ];
   }
 
   Object encode() {
@@ -742,7 +1314,11 @@ class MifareClassicPigeon {
 }
 
 class MifareUltralightPigeon {
-  MifareUltralightPigeon({required this.type, required this.maxTransceiveLength, required this.timeout});
+  MifareUltralightPigeon({
+    required this.type,
+    required this.maxTransceiveLength,
+    required this.timeout,
+  });
 
   MifareUltralightTypePigeon type;
 
@@ -751,7 +1327,11 @@ class MifareUltralightPigeon {
   int timeout;
 
   List<Object?> _toList() {
-    return <Object?>[type, maxTransceiveLength, timeout];
+    return <Object?>[
+      type,
+      maxTransceiveLength,
+      timeout,
+    ];
   }
 
   Object encode() {
@@ -792,14 +1372,20 @@ class MifareUltralightPigeon {
 }
 
 class NfcBarcodePigeon {
-  NfcBarcodePigeon({required this.type, this.barcode});
+  NfcBarcodePigeon({
+    required this.type,
+    this.barcode,
+  });
 
   NfcBarcodeTypePigeon type;
 
   Uint8List? barcode;
 
   List<Object?> _toList() {
-    return <Object?>[type, barcode];
+    return <Object?>[
+      type,
+      barcode,
+    ];
   }
 
   Object encode() {
@@ -808,7 +1394,10 @@ class NfcBarcodePigeon {
 
   static NfcBarcodePigeon decode(Object result) {
     result as List<Object?>;
-    return NfcBarcodePigeon(type: result[0]! as NfcBarcodeTypePigeon, barcode: result[1] as Uint8List?);
+    return NfcBarcodePigeon(
+      type: result[0]! as NfcBarcodeTypePigeon,
+      barcode: result[1] as Uint8List?,
+    );
   }
 
   @override
@@ -855,7 +1444,13 @@ class NdefAndroidPigeon {
   NdefMessagePigeon? cachedMessage;
 
   List<Object?> _toList() {
-    return <Object?>[type, maxSize, isWritable, canMakeReadOnly, cachedMessage];
+    return <Object?>[
+      type,
+      maxSize,
+      isWritable,
+      canMakeReadOnly,
+      cachedMessage,
+    ];
   }
 
   Object encode() {
@@ -900,7 +1495,11 @@ class NdefAndroidPigeon {
 }
 
 class NdefIosPigeon {
-  NdefIosPigeon({required this.status, required this.capacity, this.cachedMessage});
+  NdefIosPigeon({
+    required this.status,
+    required this.capacity,
+    this.cachedMessage,
+  });
 
   NdefStatusPigeon status;
 
@@ -909,7 +1508,11 @@ class NdefIosPigeon {
   NdefMessagePigeon? cachedMessage;
 
   List<Object?> _toList() {
-    return <Object?>[status, capacity, cachedMessage];
+    return <Object?>[
+      status,
+      capacity,
+      cachedMessage,
+    ];
   }
 
   Object encode() {
@@ -950,14 +1553,20 @@ class NdefIosPigeon {
 }
 
 class FeliCaPigeon {
-  FeliCaPigeon({required this.currentSystemCode, required this.currentIDm});
+  FeliCaPigeon({
+    required this.currentSystemCode,
+    required this.currentIDm,
+  });
 
   Uint8List currentSystemCode;
 
   Uint8List currentIDm;
 
   List<Object?> _toList() {
-    return <Object?>[currentSystemCode, currentIDm];
+    return <Object?>[
+      currentSystemCode,
+      currentIDm,
+    ];
   }
 
   Object encode() {
@@ -966,7 +1575,10 @@ class FeliCaPigeon {
 
   static FeliCaPigeon decode(Object result) {
     result as List<Object?>;
-    return FeliCaPigeon(currentSystemCode: result[0]! as Uint8List, currentIDm: result[1]! as Uint8List);
+    return FeliCaPigeon(
+      currentSystemCode: result[0]! as Uint8List,
+      currentIDm: result[1]! as Uint8List,
+    );
   }
 
   @override
@@ -1008,7 +1620,12 @@ class Iso7816Pigeon {
   bool proprietaryApplicationDataCoding;
 
   List<Object?> _toList() {
-    return <Object?>[initialSelectedAID, historicalBytes, applicationData, proprietaryApplicationDataCoding];
+    return <Object?>[
+      initialSelectedAID,
+      historicalBytes,
+      applicationData,
+      proprietaryApplicationDataCoding,
+    ];
   }
 
   Object encode() {
@@ -1051,14 +1668,20 @@ class Iso7816Pigeon {
 }
 
 class Iso15693Pigeon {
-  Iso15693Pigeon({required this.icManufacturerCode, required this.icSerialNumber});
+  Iso15693Pigeon({
+    required this.icManufacturerCode,
+    required this.icSerialNumber,
+  });
 
   int icManufacturerCode;
 
   Uint8List icSerialNumber;
 
   List<Object?> _toList() {
-    return <Object?>[icManufacturerCode, icSerialNumber];
+    return <Object?>[
+      icManufacturerCode,
+      icSerialNumber,
+    ];
   }
 
   Object encode() {
@@ -1067,7 +1690,10 @@ class Iso15693Pigeon {
 
   static Iso15693Pigeon decode(Object result) {
     result as List<Object?>;
-    return Iso15693Pigeon(icManufacturerCode: result[0]! as int, icSerialNumber: result[1]! as Uint8List);
+    return Iso15693Pigeon(
+      icManufacturerCode: result[0]! as int,
+      icSerialNumber: result[1]! as Uint8List,
+    );
   }
 
   @override
@@ -1094,14 +1720,20 @@ class Iso15693Pigeon {
 }
 
 class MiFarePigeon {
-  MiFarePigeon({required this.family, this.historicalBytes});
+  MiFarePigeon({
+    required this.family,
+    this.historicalBytes,
+  });
 
   MiFareFamilyPigeon family;
 
   Uint8List? historicalBytes;
 
   List<Object?> _toList() {
-    return <Object?>[family, historicalBytes];
+    return <Object?>[
+      family,
+      historicalBytes,
+    ];
   }
 
   Object encode() {
@@ -1110,7 +1742,10 @@ class MiFarePigeon {
 
   static MiFarePigeon decode(Object result) {
     result as List<Object?>;
-    return MiFarePigeon(family: result[0]! as MiFareFamilyPigeon, historicalBytes: result[1] as Uint8List?);
+    return MiFarePigeon(
+      family: result[0]! as MiFareFamilyPigeon,
+      historicalBytes: result[1] as Uint8List?,
+    );
   }
 
   @override
@@ -1292,7 +1927,11 @@ class TagPigeon {
 }
 
 class Iso7816ResponseApduPigeon {
-  Iso7816ResponseApduPigeon({required this.payload, required this.statusWord1, required this.statusWord2});
+  Iso7816ResponseApduPigeon({
+    required this.payload,
+    required this.statusWord1,
+    required this.statusWord2,
+  });
 
   Uint8List payload;
 
@@ -1301,7 +1940,11 @@ class Iso7816ResponseApduPigeon {
   int statusWord2;
 
   List<Object?> _toList() {
-    return <Object?>[payload, statusWord1, statusWord2];
+    return <Object?>[
+      payload,
+      statusWord1,
+      statusWord2,
+    ];
   }
 
   Object encode() {
@@ -1342,14 +1985,20 @@ class Iso7816ResponseApduPigeon {
 }
 
 class FeliCaPollingResponsePigeon {
-  FeliCaPollingResponsePigeon({required this.manufacturerParameter, required this.requestData});
+  FeliCaPollingResponsePigeon({
+    required this.manufacturerParameter,
+    required this.requestData,
+  });
 
   Uint8List manufacturerParameter;
 
   Uint8List requestData;
 
   List<Object?> _toList() {
-    return <Object?>[manufacturerParameter, requestData];
+    return <Object?>[
+      manufacturerParameter,
+      requestData,
+    ];
   }
 
   Object encode() {
@@ -1388,14 +2037,20 @@ class FeliCaPollingResponsePigeon {
 }
 
 class FeliCaStatusFlagPigeon {
-  FeliCaStatusFlagPigeon({required this.statusFlag1, required this.statusFlag2});
+  FeliCaStatusFlagPigeon({
+    required this.statusFlag1,
+    required this.statusFlag2,
+  });
 
   int statusFlag1;
 
   int statusFlag2;
 
   List<Object?> _toList() {
-    return <Object?>[statusFlag1, statusFlag2];
+    return <Object?>[
+      statusFlag1,
+      statusFlag2,
+    ];
   }
 
   Object encode() {
@@ -1404,7 +2059,10 @@ class FeliCaStatusFlagPigeon {
 
   static FeliCaStatusFlagPigeon decode(Object result) {
     result as List<Object?>;
-    return FeliCaStatusFlagPigeon(statusFlag1: result[0]! as int, statusFlag2: result[1]! as int);
+    return FeliCaStatusFlagPigeon(
+      statusFlag1: result[0]! as int,
+      statusFlag2: result[1]! as int,
+    );
   }
 
   @override
@@ -1443,7 +2101,11 @@ class FeliCaReadWithoutEncryptionResponsePigeon {
   List<Uint8List> blockData;
 
   List<Object?> _toList() {
-    return <Object?>[statusFlag1, statusFlag2, blockData];
+    return <Object?>[
+      statusFlag1,
+      statusFlag2,
+      blockData,
+    ];
   }
 
   Object encode() {
@@ -1503,7 +2165,13 @@ class FeliCaRequestServiceV2ResponsePigeon {
   List<Uint8List>? nodeKeyVersionListDes;
 
   List<Object?> _toList() {
-    return <Object?>[statusFlag1, statusFlag2, encryptionIdentifier, nodeKeyVersionListAes, nodeKeyVersionListDes];
+    return <Object?>[
+      statusFlag1,
+      statusFlag2,
+      encryptionIdentifier,
+      nodeKeyVersionListAes,
+      nodeKeyVersionListDes,
+    ];
   }
 
   Object encode() {
@@ -1564,7 +2232,12 @@ class FeliCaRequestSpecificationVersionResponsePigeon {
   Uint8List? optionVersion;
 
   List<Object?> _toList() {
-    return <Object?>[statusFlag1, statusFlag2, basicVersion, optionVersion];
+    return <Object?>[
+      statusFlag1,
+      statusFlag2,
+      basicVersion,
+      optionVersion,
+    ];
   }
 
   Object encode() {
@@ -1626,7 +2299,13 @@ class Iso15693SystemInfoPigeon {
   int totalBlocks;
 
   List<Object?> _toList() {
-    return <Object?>[applicationFamilyIdentifier, blockSize, dataStorageFormatIdentifier, icReference, totalBlocks];
+    return <Object?>[
+      applicationFamilyIdentifier,
+      blockSize,
+      dataStorageFormatIdentifier,
+      icReference,
+      totalBlocks,
+    ];
   }
 
   Object encode() {
@@ -1671,14 +2350,20 @@ class Iso15693SystemInfoPigeon {
 }
 
 class QueryNdefStatusResponsePigeon {
-  QueryNdefStatusResponsePigeon({required this.status, required this.capacity});
+  QueryNdefStatusResponsePigeon({
+    required this.status,
+    required this.capacity,
+  });
 
   NdefStatusPigeon status;
 
   int capacity;
 
   List<Object?> _toList() {
-    return <Object?>[status, capacity];
+    return <Object?>[
+      status,
+      capacity,
+    ];
   }
 
   Object encode() {
@@ -1687,7 +2372,10 @@ class QueryNdefStatusResponsePigeon {
 
   static QueryNdefStatusResponsePigeon decode(Object result) {
     result as List<Object?>;
-    return QueryNdefStatusResponsePigeon(status: result[0]! as NdefStatusPigeon, capacity: result[1]! as int);
+    return QueryNdefStatusResponsePigeon(
+      status: result[0]! as NdefStatusPigeon,
+      capacity: result[1]! as int,
+    );
   }
 
   @override
@@ -1713,7 +2401,11 @@ class QueryNdefStatusResponsePigeon {
 }
 
 class VasCommandConfigurationPigeon {
-  VasCommandConfigurationPigeon({required this.mode, required this.passTypeIdentifier, this.url});
+  VasCommandConfigurationPigeon({
+    required this.mode,
+    required this.passTypeIdentifier,
+    this.url,
+  });
 
   VasModePigeon mode;
 
@@ -1722,7 +2414,11 @@ class VasCommandConfigurationPigeon {
   String? url;
 
   List<Object?> _toList() {
-    return <Object?>[mode, passTypeIdentifier, url];
+    return <Object?>[
+      mode,
+      passTypeIdentifier,
+      url,
+    ];
   }
 
   Object encode() {
@@ -1763,7 +2459,11 @@ class VasCommandConfigurationPigeon {
 }
 
 class VasResponsePigeon {
-  VasResponsePigeon({required this.status, required this.vasData, required this.mobileToken});
+  VasResponsePigeon({
+    required this.status,
+    required this.vasData,
+    required this.mobileToken,
+  });
 
   VasResponseErrorCodePigeon status;
 
@@ -1772,7 +2472,11 @@ class VasResponsePigeon {
   Uint8List mobileToken;
 
   List<Object?> _toList() {
-    return <Object?>[status, vasData, mobileToken];
+    return <Object?>[
+      status,
+      vasData,
+      mobileToken,
+    ];
   }
 
   Object encode() {
@@ -1843,7 +2547,13 @@ class NfcErrorPigeon {
   bool sessionEnded;
 
   List<Object?> _toList() {
-    return <Object?>[source, iosCode, androidCode, message, sessionEnded];
+    return <Object?>[
+      source,
+      iosCode,
+      androidCode,
+      message,
+      sessionEnded,
+    ];
   }
 
   Object encode() {
@@ -1906,140 +2616,170 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is ReaderFlagPigeon) {
       buffer.putUint8(132);
       writeValue(buffer, value.index);
-    } else if (value is AndroidTechPigeon) {
+    } else if (value is PollTechPigeon) {
       buffer.putUint8(133);
       writeValue(buffer, value.index);
-    } else if (value is TypeNameFormatPigeon) {
+    } else if (value is ListenTechPigeon) {
       buffer.putUint8(134);
       writeValue(buffer, value.index);
-    } else if (value is MifareClassicTypePigeon) {
+    } else if (value is PollingFrameTypePigeon) {
       buffer.putUint8(135);
       writeValue(buffer, value.index);
-    } else if (value is MifareUltralightTypePigeon) {
+    } else if (value is NfcEventKindPigeon) {
       buffer.putUint8(136);
       writeValue(buffer, value.index);
-    } else if (value is NfcBarcodeTypePigeon) {
+    } else if (value is NfcInternalErrorPigeon) {
       buffer.putUint8(137);
       writeValue(buffer, value.index);
-    } else if (value is MiFareFamilyPigeon) {
+    } else if (value is AndroidTechPigeon) {
       buffer.putUint8(138);
       writeValue(buffer, value.index);
-    } else if (value is NdefStatusPigeon) {
+    } else if (value is TypeNameFormatPigeon) {
       buffer.putUint8(139);
       writeValue(buffer, value.index);
-    } else if (value is Iso15693RequestFlagPigeon) {
+    } else if (value is MifareClassicTypePigeon) {
       buffer.putUint8(140);
       writeValue(buffer, value.index);
-    } else if (value is FeliCaPollingRequestCodePigeon) {
+    } else if (value is MifareUltralightTypePigeon) {
       buffer.putUint8(141);
       writeValue(buffer, value.index);
-    } else if (value is FeliCaPollingTimeSlotPigeon) {
+    } else if (value is NfcBarcodeTypePigeon) {
       buffer.putUint8(142);
       writeValue(buffer, value.index);
-    } else if (value is VasModePigeon) {
+    } else if (value is MiFareFamilyPigeon) {
       buffer.putUint8(143);
       writeValue(buffer, value.index);
-    } else if (value is VasResponseErrorCodePigeon) {
+    } else if (value is NdefStatusPigeon) {
       buffer.putUint8(144);
       writeValue(buffer, value.index);
-    } else if (value is ErrorSourcePigeon) {
+    } else if (value is Iso15693RequestFlagPigeon) {
       buffer.putUint8(145);
       writeValue(buffer, value.index);
-    } else if (value is SessionKindPigeon) {
+    } else if (value is FeliCaPollingRequestCodePigeon) {
       buffer.putUint8(146);
       writeValue(buffer, value.index);
-    } else if (value is AndroidErrorCodePigeon) {
+    } else if (value is FeliCaPollingTimeSlotPigeon) {
       buffer.putUint8(147);
       writeValue(buffer, value.index);
-    } else if (value is ReaderErrorCodePigeon) {
+    } else if (value is VasModePigeon) {
       buffer.putUint8(148);
       writeValue(buffer, value.index);
-    } else if (value is NdefRecordPigeon) {
+    } else if (value is VasResponseErrorCodePigeon) {
       buffer.putUint8(149);
-      writeValue(buffer, value.encode());
-    } else if (value is NdefMessagePigeon) {
+      writeValue(buffer, value.index);
+    } else if (value is ErrorSourcePigeon) {
       buffer.putUint8(150);
-      writeValue(buffer, value.encode());
-    } else if (value is SessionConfigPigeon) {
+      writeValue(buffer, value.index);
+    } else if (value is SessionKindPigeon) {
       buffer.putUint8(151);
-      writeValue(buffer, value.encode());
-    } else if (value is NfcAPigeon) {
+      writeValue(buffer, value.index);
+    } else if (value is AndroidErrorCodePigeon) {
       buffer.putUint8(152);
-      writeValue(buffer, value.encode());
-    } else if (value is NfcBPigeon) {
+      writeValue(buffer, value.index);
+    } else if (value is ReaderErrorCodePigeon) {
       buffer.putUint8(153);
-      writeValue(buffer, value.encode());
-    } else if (value is NfcFPigeon) {
+      writeValue(buffer, value.index);
+    } else if (value is NdefRecordPigeon) {
       buffer.putUint8(154);
       writeValue(buffer, value.encode());
-    } else if (value is NfcVPigeon) {
+    } else if (value is NdefMessagePigeon) {
       buffer.putUint8(155);
       writeValue(buffer, value.encode());
-    } else if (value is IsoDepPigeon) {
+    } else if (value is SessionConfigPigeon) {
       buffer.putUint8(156);
       writeValue(buffer, value.encode());
-    } else if (value is MifareClassicPigeon) {
+    } else if (value is PollingFramePigeon) {
       buffer.putUint8(157);
       writeValue(buffer, value.encode());
-    } else if (value is MifareUltralightPigeon) {
+    } else if (value is AvailableNfcAntennaPigeon) {
       buffer.putUint8(158);
       writeValue(buffer, value.encode());
-    } else if (value is NfcBarcodePigeon) {
+    } else if (value is NfcAntennaInfoPigeon) {
       buffer.putUint8(159);
       writeValue(buffer, value.encode());
-    } else if (value is NdefAndroidPigeon) {
+    } else if (value is NfcEventPigeon) {
       buffer.putUint8(160);
       writeValue(buffer, value.encode());
-    } else if (value is NdefIosPigeon) {
+    } else if (value is TagIntentSetupPigeon) {
       buffer.putUint8(161);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaPigeon) {
+    } else if (value is NfcAPigeon) {
       buffer.putUint8(162);
       writeValue(buffer, value.encode());
-    } else if (value is Iso7816Pigeon) {
+    } else if (value is NfcBPigeon) {
       buffer.putUint8(163);
       writeValue(buffer, value.encode());
-    } else if (value is Iso15693Pigeon) {
+    } else if (value is NfcFPigeon) {
       buffer.putUint8(164);
       writeValue(buffer, value.encode());
-    } else if (value is MiFarePigeon) {
+    } else if (value is NfcVPigeon) {
       buffer.putUint8(165);
       writeValue(buffer, value.encode());
-    } else if (value is TagPigeon) {
+    } else if (value is IsoDepPigeon) {
       buffer.putUint8(166);
       writeValue(buffer, value.encode());
-    } else if (value is Iso7816ResponseApduPigeon) {
+    } else if (value is MifareClassicPigeon) {
       buffer.putUint8(167);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaPollingResponsePigeon) {
+    } else if (value is MifareUltralightPigeon) {
       buffer.putUint8(168);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaStatusFlagPigeon) {
+    } else if (value is NfcBarcodePigeon) {
       buffer.putUint8(169);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaReadWithoutEncryptionResponsePigeon) {
+    } else if (value is NdefAndroidPigeon) {
       buffer.putUint8(170);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaRequestServiceV2ResponsePigeon) {
+    } else if (value is NdefIosPigeon) {
       buffer.putUint8(171);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaRequestSpecificationVersionResponsePigeon) {
+    } else if (value is FeliCaPigeon) {
       buffer.putUint8(172);
       writeValue(buffer, value.encode());
-    } else if (value is Iso15693SystemInfoPigeon) {
+    } else if (value is Iso7816Pigeon) {
       buffer.putUint8(173);
       writeValue(buffer, value.encode());
-    } else if (value is QueryNdefStatusResponsePigeon) {
+    } else if (value is Iso15693Pigeon) {
       buffer.putUint8(174);
       writeValue(buffer, value.encode());
-    } else if (value is VasCommandConfigurationPigeon) {
+    } else if (value is MiFarePigeon) {
       buffer.putUint8(175);
       writeValue(buffer, value.encode());
-    } else if (value is VasResponsePigeon) {
+    } else if (value is TagPigeon) {
       buffer.putUint8(176);
       writeValue(buffer, value.encode());
-    } else if (value is NfcErrorPigeon) {
+    } else if (value is Iso7816ResponseApduPigeon) {
       buffer.putUint8(177);
+      writeValue(buffer, value.encode());
+    } else if (value is FeliCaPollingResponsePigeon) {
+      buffer.putUint8(178);
+      writeValue(buffer, value.encode());
+    } else if (value is FeliCaStatusFlagPigeon) {
+      buffer.putUint8(179);
+      writeValue(buffer, value.encode());
+    } else if (value is FeliCaReadWithoutEncryptionResponsePigeon) {
+      buffer.putUint8(180);
+      writeValue(buffer, value.encode());
+    } else if (value is FeliCaRequestServiceV2ResponsePigeon) {
+      buffer.putUint8(181);
+      writeValue(buffer, value.encode());
+    } else if (value is FeliCaRequestSpecificationVersionResponsePigeon) {
+      buffer.putUint8(182);
+      writeValue(buffer, value.encode());
+    } else if (value is Iso15693SystemInfoPigeon) {
+      buffer.putUint8(183);
+      writeValue(buffer, value.encode());
+    } else if (value is QueryNdefStatusResponsePigeon) {
+      buffer.putUint8(184);
+      writeValue(buffer, value.encode());
+    } else if (value is VasCommandConfigurationPigeon) {
+      buffer.putUint8(185);
+      writeValue(buffer, value.encode());
+    } else if (value is VasResponsePigeon) {
+      buffer.putUint8(186);
+      writeValue(buffer, value.encode());
+    } else if (value is NfcErrorPigeon) {
+      buffer.putUint8(187);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -2063,109 +2803,134 @@ class _PigeonCodec extends StandardMessageCodec {
         return value == null ? null : ReaderFlagPigeon.values[value];
       case 133:
         final value = readValue(buffer) as int?;
-        return value == null ? null : AndroidTechPigeon.values[value];
+        return value == null ? null : PollTechPigeon.values[value];
       case 134:
         final value = readValue(buffer) as int?;
-        return value == null ? null : TypeNameFormatPigeon.values[value];
+        return value == null ? null : ListenTechPigeon.values[value];
       case 135:
         final value = readValue(buffer) as int?;
-        return value == null ? null : MifareClassicTypePigeon.values[value];
+        return value == null ? null : PollingFrameTypePigeon.values[value];
       case 136:
         final value = readValue(buffer) as int?;
-        return value == null ? null : MifareUltralightTypePigeon.values[value];
+        return value == null ? null : NfcEventKindPigeon.values[value];
       case 137:
         final value = readValue(buffer) as int?;
-        return value == null ? null : NfcBarcodeTypePigeon.values[value];
+        return value == null ? null : NfcInternalErrorPigeon.values[value];
       case 138:
         final value = readValue(buffer) as int?;
-        return value == null ? null : MiFareFamilyPigeon.values[value];
+        return value == null ? null : AndroidTechPigeon.values[value];
       case 139:
         final value = readValue(buffer) as int?;
-        return value == null ? null : NdefStatusPigeon.values[value];
+        return value == null ? null : TypeNameFormatPigeon.values[value];
       case 140:
         final value = readValue(buffer) as int?;
-        return value == null ? null : Iso15693RequestFlagPigeon.values[value];
+        return value == null ? null : MifareClassicTypePigeon.values[value];
       case 141:
         final value = readValue(buffer) as int?;
-        return value == null ? null : FeliCaPollingRequestCodePigeon.values[value];
+        return value == null ? null : MifareUltralightTypePigeon.values[value];
       case 142:
         final value = readValue(buffer) as int?;
-        return value == null ? null : FeliCaPollingTimeSlotPigeon.values[value];
+        return value == null ? null : NfcBarcodeTypePigeon.values[value];
       case 143:
         final value = readValue(buffer) as int?;
-        return value == null ? null : VasModePigeon.values[value];
+        return value == null ? null : MiFareFamilyPigeon.values[value];
       case 144:
         final value = readValue(buffer) as int?;
-        return value == null ? null : VasResponseErrorCodePigeon.values[value];
+        return value == null ? null : NdefStatusPigeon.values[value];
       case 145:
         final value = readValue(buffer) as int?;
-        return value == null ? null : ErrorSourcePigeon.values[value];
+        return value == null ? null : Iso15693RequestFlagPigeon.values[value];
       case 146:
         final value = readValue(buffer) as int?;
-        return value == null ? null : SessionKindPigeon.values[value];
+        return value == null ? null : FeliCaPollingRequestCodePigeon.values[value];
       case 147:
         final value = readValue(buffer) as int?;
-        return value == null ? null : AndroidErrorCodePigeon.values[value];
+        return value == null ? null : FeliCaPollingTimeSlotPigeon.values[value];
       case 148:
         final value = readValue(buffer) as int?;
-        return value == null ? null : ReaderErrorCodePigeon.values[value];
+        return value == null ? null : VasModePigeon.values[value];
       case 149:
-        return NdefRecordPigeon.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : VasResponseErrorCodePigeon.values[value];
       case 150:
-        return NdefMessagePigeon.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : ErrorSourcePigeon.values[value];
       case 151:
-        return SessionConfigPigeon.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : SessionKindPigeon.values[value];
       case 152:
-        return NfcAPigeon.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : AndroidErrorCodePigeon.values[value];
       case 153:
-        return NfcBPigeon.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : ReaderErrorCodePigeon.values[value];
       case 154:
-        return NfcFPigeon.decode(readValue(buffer)!);
+        return NdefRecordPigeon.decode(readValue(buffer)!);
       case 155:
-        return NfcVPigeon.decode(readValue(buffer)!);
+        return NdefMessagePigeon.decode(readValue(buffer)!);
       case 156:
-        return IsoDepPigeon.decode(readValue(buffer)!);
+        return SessionConfigPigeon.decode(readValue(buffer)!);
       case 157:
-        return MifareClassicPigeon.decode(readValue(buffer)!);
+        return PollingFramePigeon.decode(readValue(buffer)!);
       case 158:
-        return MifareUltralightPigeon.decode(readValue(buffer)!);
+        return AvailableNfcAntennaPigeon.decode(readValue(buffer)!);
       case 159:
-        return NfcBarcodePigeon.decode(readValue(buffer)!);
+        return NfcAntennaInfoPigeon.decode(readValue(buffer)!);
       case 160:
-        return NdefAndroidPigeon.decode(readValue(buffer)!);
+        return NfcEventPigeon.decode(readValue(buffer)!);
       case 161:
-        return NdefIosPigeon.decode(readValue(buffer)!);
+        return TagIntentSetupPigeon.decode(readValue(buffer)!);
       case 162:
-        return FeliCaPigeon.decode(readValue(buffer)!);
+        return NfcAPigeon.decode(readValue(buffer)!);
       case 163:
-        return Iso7816Pigeon.decode(readValue(buffer)!);
+        return NfcBPigeon.decode(readValue(buffer)!);
       case 164:
-        return Iso15693Pigeon.decode(readValue(buffer)!);
+        return NfcFPigeon.decode(readValue(buffer)!);
       case 165:
-        return MiFarePigeon.decode(readValue(buffer)!);
+        return NfcVPigeon.decode(readValue(buffer)!);
       case 166:
-        return TagPigeon.decode(readValue(buffer)!);
+        return IsoDepPigeon.decode(readValue(buffer)!);
       case 167:
-        return Iso7816ResponseApduPigeon.decode(readValue(buffer)!);
+        return MifareClassicPigeon.decode(readValue(buffer)!);
       case 168:
-        return FeliCaPollingResponsePigeon.decode(readValue(buffer)!);
+        return MifareUltralightPigeon.decode(readValue(buffer)!);
       case 169:
-        return FeliCaStatusFlagPigeon.decode(readValue(buffer)!);
+        return NfcBarcodePigeon.decode(readValue(buffer)!);
       case 170:
-        return FeliCaReadWithoutEncryptionResponsePigeon.decode(readValue(buffer)!);
+        return NdefAndroidPigeon.decode(readValue(buffer)!);
       case 171:
-        return FeliCaRequestServiceV2ResponsePigeon.decode(readValue(buffer)!);
+        return NdefIosPigeon.decode(readValue(buffer)!);
       case 172:
-        return FeliCaRequestSpecificationVersionResponsePigeon.decode(readValue(buffer)!);
+        return FeliCaPigeon.decode(readValue(buffer)!);
       case 173:
-        return Iso15693SystemInfoPigeon.decode(readValue(buffer)!);
+        return Iso7816Pigeon.decode(readValue(buffer)!);
       case 174:
-        return QueryNdefStatusResponsePigeon.decode(readValue(buffer)!);
+        return Iso15693Pigeon.decode(readValue(buffer)!);
       case 175:
-        return VasCommandConfigurationPigeon.decode(readValue(buffer)!);
+        return MiFarePigeon.decode(readValue(buffer)!);
       case 176:
-        return VasResponsePigeon.decode(readValue(buffer)!);
+        return TagPigeon.decode(readValue(buffer)!);
       case 177:
+        return Iso7816ResponseApduPigeon.decode(readValue(buffer)!);
+      case 178:
+        return FeliCaPollingResponsePigeon.decode(readValue(buffer)!);
+      case 179:
+        return FeliCaStatusFlagPigeon.decode(readValue(buffer)!);
+      case 180:
+        return FeliCaReadWithoutEncryptionResponsePigeon.decode(readValue(buffer)!);
+      case 181:
+        return FeliCaRequestServiceV2ResponsePigeon.decode(readValue(buffer)!);
+      case 182:
+        return FeliCaRequestSpecificationVersionResponsePigeon.decode(readValue(buffer)!);
+      case 183:
+        return Iso15693SystemInfoPigeon.decode(readValue(buffer)!);
+      case 184:
+        return QueryNdefStatusResponsePigeon.decode(readValue(buffer)!);
+      case 185:
+        return VasCommandConfigurationPigeon.decode(readValue(buffer)!);
+      case 186:
+        return VasResponsePigeon.decode(readValue(buffer)!);
+      case 187:
         return NfcErrorPigeon.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -2216,7 +2981,11 @@ class NfcHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[config]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> stopSession(String? alertMessage, String? errorMessage) async {
@@ -2229,7 +2998,11 @@ class NfcHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[alertMessage, errorMessage]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> disposeTag(String handle) async {
@@ -2242,7 +3015,11 @@ class NfcHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<NdefMessagePigeon?> ndefRead(String handle) async {
@@ -2273,7 +3050,11 @@ class NfcHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, message]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> ndefWriteLock(String handle) async {
@@ -2286,7 +3067,11 @@ class NfcHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 }
 
@@ -2374,7 +3159,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[flags, presenceCheckDelayMillis]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> disableReaderMode() async {
@@ -2388,7 +3177,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   /// Claims tag delivery while the activity is in the foreground, so a tag cannot be
@@ -2404,7 +3197,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> disableForegroundDispatch() async {
@@ -2418,7 +3215,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   /// The tag whose intent launched the app, if any. Consumed by the first call.
@@ -2439,6 +3240,146 @@ class NfcAndroidHostApi {
       isNullValid: true,
     );
     return pigeonVar_replyValue as TagPigeon?;
+  }
+
+  /// Restricts what the controller polls for and answers as, for as long as the activity is
+  /// in the foreground. API 35 and above.
+  Future<void> setDiscoveryTechnology(List<PollTechPigeon> poll, List<ListenTechPigeon> listen) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.setDiscoveryTechnology$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[poll, listen]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  Future<void> resetDiscoveryTechnology() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.resetDiscoveryTechnology$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// Where the antennas are, so an app can say where to hold the tag. API 34 and above;
+  /// null below, and on a device that publishes no geometry.
+  Future<NfcAntennaInfoPigeon?> getAntennaInfo() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.getAntennaInfo$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+    return pigeonVar_replyValue as NfcAntennaInfoPigeon?;
+  }
+
+  /// Whether the device implements the Android 16 tag-scan allowlist.
+  Future<bool> isTagIntentAppPreferenceSupported() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isTagIntentAppPreferenceSupported$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Whether the user has allowed this app to be launched by a tag. True below API 36.
+  Future<bool> isTagIntentAllowed() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isTagIntentAllowed$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Opens the system screen where the user changes that. False when there is no activity
+  /// to start it from, or the device has no such screen.
+  Future<bool> openTagIntentPreferenceSettings() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.openTagIntentPreferenceSettings$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Everything that decides whether a tag *intent* can reach this app, in one call.
+  Future<TagIntentSetupPigeon> checkTagIntentSetup() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.checkTagIntentSetup$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as TagIntentSetupPigeon;
   }
 
   Future<Uint8List> transceive(String handle, AndroidTechPigeon tech, Uint8List data) async {
@@ -2509,7 +3450,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, tech, timeout]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<bool> mifareClassicAuthenticateSector(String handle, int sectorIndex, Uint8List key, bool useKeyA) async {
@@ -2561,7 +3506,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, blockIndex, data]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> mifareClassicIncrement(String handle, int blockIndex, int value) async {
@@ -2575,7 +3524,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, blockIndex, value]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> mifareClassicDecrement(String handle, int blockIndex, int value) async {
@@ -2589,7 +3542,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, blockIndex, value]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> mifareClassicRestore(String handle, int blockIndex) async {
@@ -2603,7 +3560,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, blockIndex]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> mifareClassicTransfer(String handle, int blockIndex) async {
@@ -2617,7 +3578,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, blockIndex]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   /// Sector geometry is not uniform -- a 4K card has 32 sectors of 4 blocks then 8 of 16 --
@@ -2710,7 +3675,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, pageOffset, data]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> ndefFormat(String handle, NdefMessagePigeon firstMessage, bool readOnly) async {
@@ -2724,7 +3693,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, firstMessage, readOnly]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<bool> hceIsSupported() async {
@@ -2798,7 +3771,11 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[response]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   /// Makes this app the preferred handler while it is in the foreground, so a tap reaches
@@ -2814,7 +3791,211 @@ class NfcAndroidHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[preferred]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  Future<bool> hceIsObserveModeSupported() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsObserveModeSupported$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> hceIsObserveModeEnabled() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsObserveModeEnabled$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Stops the device answering readers and starts delivering their polling frames instead.
+  /// Only the preferred service may change this, so pair it with [hceSetPreferredService].
+  Future<bool> hceSetObserveModeEnabled(bool enabled) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSetObserveModeEnabled$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[enabled]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Whether the service should come up in observe mode whenever it becomes preferred,
+  /// rather than needing [hceSetObserveModeEnabled] each time.
+  Future<bool> hceSetDefaultToObserveMode(bool shouldDefault) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSetDefaultToObserveMode$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[shouldDefault]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Delivers polling frames whose bytes are exactly [filter], as uppercase hex.
+  ///
+  /// With [autoTransact] the platform leaves observe mode by itself on a match, so the
+  /// exchange that follows is answered rather than merely watched.
+  Future<bool> hceRegisterPollingLoopFilter(String filter, bool autoTransact) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRegisterPollingLoopFilter$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[filter, autoTransact]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// As [hceRegisterPollingLoopFilter], but [pattern] is a regular expression matched
+  /// against the frame's hex.
+  Future<bool> hceRegisterPollingLoopPatternFilter(String pattern, bool autoTransact) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRegisterPollingLoopPatternFilter$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[pattern, autoTransact]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> hceRemovePollingLoopFilter(String filter) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRemovePollingLoopFilter$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[filter]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<bool> hceRemovePollingLoopPatternFilter(String pattern) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRemovePollingLoopPatternFilter$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[pattern]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Starts delivering `onNfcEvent`. False on a device below API 36.
+  Future<bool> enableNfcEvents() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.enableNfcEvents$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<void> disableNfcEvents() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.disableNfcEvents$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 }
 
@@ -2862,7 +4043,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[alertMessage]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   /// Drops the current tag and polls again, without tearing down the reader sheet.
@@ -2877,7 +4062,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<bool> vasSessionReadingAvailable() async {
@@ -2910,7 +4099,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[configurations, alertMessage]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> vasSessionInvalidate(String? alertMessage, String? errorMessage) async {
@@ -2924,7 +4117,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[alertMessage, errorMessage]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> vasSessionSetAlertMessage(String alertMessage) async {
@@ -2938,7 +4135,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[alertMessage]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   /// The live status, as opposed to the copy captured at discovery.
@@ -3242,7 +4443,11 @@ class NfcIosHostApi {
     ]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> iso15693LockBlock(String handle, List<Iso15693RequestFlagPigeon> flags, int blockNumber) async {
@@ -3256,7 +4461,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags, blockNumber]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<List<Uint8List>> iso15693ReadMultipleBlocks(
@@ -3311,7 +4520,11 @@ class NfcIosHostApi {
     ]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<List<int>> iso15693GetMultipleBlockSecurityStatus(
@@ -3354,7 +4567,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags, afi]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> iso15693LockAfi(String handle, List<Iso15693RequestFlagPigeon> flags) async {
@@ -3368,7 +4585,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> iso15693WriteDsfId(String handle, List<Iso15693RequestFlagPigeon> flags, int dsfId) async {
@@ -3382,7 +4603,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags, dsfId]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> iso15693LockDsfId(String handle, List<Iso15693RequestFlagPigeon> flags) async {
@@ -3396,7 +4621,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> iso15693ResetToReady(String handle, List<Iso15693RequestFlagPigeon> flags) async {
@@ -3410,7 +4639,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> iso15693Select(String handle, List<Iso15693RequestFlagPigeon> flags) async {
@@ -3424,7 +4657,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> iso15693StayQuiet(String handle) async {
@@ -3438,7 +4675,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<Uint8List> iso15693ExtendedReadSingleBlock(
@@ -3485,7 +4726,11 @@ class NfcIosHostApi {
     ]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<void> iso15693ExtendedLockBlock(String handle, List<Iso15693RequestFlagPigeon> flags, int blockNumber) async {
@@ -3499,7 +4744,11 @@ class NfcIosHostApi {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags, blockNumber]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
-    _extractReplyValueOrThrow(pigeonVar_replyList, pigeonVar_channelName, isNullValid: true);
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
   }
 
   Future<List<Uint8List>> iso15693ExtendedReadMultipleBlocks(
@@ -3736,13 +4985,25 @@ abstract class NfcFlutterApi {
   /// Android only. `HostApduService.onDeactivated` reason.
   void onHceDeactivated(int reason);
 
+  /// Android only. Frames from a reader's polling loop, while observe mode is on.
+  ///
+  /// Batched by the platform: one call can carry a whole loop.
+  void onPollingFrames(List<PollingFramePigeon> frames);
+
+  /// Android only. A card-emulation event, once `enableNfcEvents` has been called.
+  void onNfcEvent(NfcEventPigeon event);
+
   /// Android only. A tag delivered by an intent filter rather than a reader session.
   Future<void> onTagFromIntent(TagPigeon tag);
 
   /// iOS only. An NDEF message from background tag reading.
   void onNdefFromBackground(NdefMessagePigeon message);
 
-  static void setUp(NfcFlutterApi? api, {BinaryMessenger? binaryMessenger, String messageChannelSuffix = ''}) {
+  static void setUp(
+    NfcFlutterApi? api, {
+    BinaryMessenger? binaryMessenger,
+    String messageChannelSuffix = '',
+  }) {
     messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
     {
       final pigeonVar_channel = BasicMessageChannel<Object?>(
@@ -3909,6 +5170,56 @@ abstract class NfcFlutterApi {
           final int arg_reason = args[0]! as int;
           try {
             api.onHceDeactivated(arg_reason);
+            return wrapResponse(empty: true);
+          } on PlatformException catch (e) {
+            return wrapResponse(error: e);
+          } catch (e) {
+            return wrapResponse(
+              error: PlatformException(code: 'error', message: e.toString()),
+            );
+          }
+        });
+      }
+    }
+    {
+      final pigeonVar_channel = BasicMessageChannel<Object?>(
+        'dev.flutter.pigeon.nfc_util.NfcFlutterApi.onPollingFrames$messageChannelSuffix',
+        pigeonChannelCodec,
+        binaryMessenger: binaryMessenger,
+      );
+      if (api == null) {
+        pigeonVar_channel.setMessageHandler(null);
+      } else {
+        pigeonVar_channel.setMessageHandler((Object? message) async {
+          final List<Object?> args = message! as List<Object?>;
+          final List<PollingFramePigeon> arg_frames = (args[0]! as List<Object?>).cast<PollingFramePigeon>();
+          try {
+            api.onPollingFrames(arg_frames);
+            return wrapResponse(empty: true);
+          } on PlatformException catch (e) {
+            return wrapResponse(error: e);
+          } catch (e) {
+            return wrapResponse(
+              error: PlatformException(code: 'error', message: e.toString()),
+            );
+          }
+        });
+      }
+    }
+    {
+      final pigeonVar_channel = BasicMessageChannel<Object?>(
+        'dev.flutter.pigeon.nfc_util.NfcFlutterApi.onNfcEvent$messageChannelSuffix',
+        pigeonChannelCodec,
+        binaryMessenger: binaryMessenger,
+      );
+      if (api == null) {
+        pigeonVar_channel.setMessageHandler(null);
+      } else {
+        pigeonVar_channel.setMessageHandler((Object? message) async {
+          final List<Object?> args = message! as List<Object?>;
+          final NfcEventPigeon arg_event = args[0]! as NfcEventPigeon;
+          try {
+            api.onNfcEvent(arg_event);
             return wrapResponse(empty: true);
           } on PlatformException catch (e) {
             return wrapResponse(error: e);

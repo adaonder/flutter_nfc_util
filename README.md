@@ -27,6 +27,7 @@ New here? Everything you need for a first tag read is in [Quick start](#quick-st
   * [The minimum, for reading tags](#the-minimum-for-reading-tags)
   * [Only if you need it](#only-if-you-need-it)
   * [Troubleshooting](#troubleshooting)
+* [Android 16 and 17](#android-16-and-17)
 * [The four libraries](#the-four-libraries)
 * [Sessions](#sessions)
 * [NDEF](#ndef)
@@ -37,6 +38,7 @@ New here? Everything you need for a first tag read is in [Quick start](#quick-st
 * [Errors](#errors)
 * [Testing](#testing)
 * [Upgrading from 2.2.0](#upgrading-from-220)
+* [Roadmap](#roadmap)
 * [License](#license)
 
 ## What it does
@@ -56,6 +58,10 @@ New here? Everything you need for a first tag read is in [Quick start](#quick-st
 | Barcode (Kovio) tags | ✅ | — |
 | Background / launch-on-tag reading | ✅ intent filters | ✅ NDEF user activity |
 | Host card emulation | ✅ runtime AID registration | — not available to third-party apps |
+| Observe mode, polling loop filters | ✅ Android 15 (API 35) | — |
+| Discovery technology, antenna geometry | ✅ API 35 / API 34 | — |
+| Card-emulation event stream | ✅ Android 16 (API 36) | — |
+| Tag-intent allowlist and dispatch check | ✅ Android 16 / 17 | — |
 | Apple Value Added Services | — | ✅ Wallet passes |
 | Adapter state stream, secure NFC | ✅ | — no such state on iOS |
 | Typed errors | ✅ 8 codes | ✅ 24 CoreNFC codes |
@@ -64,7 +70,7 @@ New here? Everything you need for a first tag read is in [Quick start](#quick-st
 
 ```yaml
 dependencies:
-  nfc_util: ^3.1.2
+  nfc_util: ^3.2.0
 ```
 
 Requires Flutter 3.44, Android API 24, iOS 15.6.
@@ -85,8 +91,18 @@ Then check your project clears the floor: **Flutter 3.44**, **Android API 24** (
 
 ### 2. Android: nothing to do
 
-The plugin declares `android.permission.NFC` for you, so an app that only reads tags needs no
-manifest change at all. **Skip to step 4.**
+The plugin declares `android.permission.NFC` for you, and `android.hardware.nfc` as *not*
+required, so an app that only reads tags needs no manifest change at all. **Skip to step 4.**
+
+If your app cannot work without NFC, declare the feature as required in your own manifest:
+
+```xml
+<uses-feature android:name="android.hardware.nfc" android:required="true" />
+```
+
+No `tools:replace` is needed. The manifest merger ORs `android:required` across manifests, so
+your `true` wins over the plugin's `false` on its own — and `tools:` would need an
+`xmlns:tools` declaration the stock Flutter manifest does not carry.
 
 Android needs manifest entries only for letting a tag *launch* your app while it is closed,
 which is a later concern — see [Setup in detail](#setup-in-detail).
@@ -299,6 +315,89 @@ without it, so it builds on any team; add it once your own App ID is provisioned
 | **Android: the tap opens a different app** | Another app claims the tag first. Call `enableForegroundDispatch()` while your screen is up — [Background tag reading](#background-tag-reading). |
 | A write appears to do nothing | Check `ndef.isWritable`, and `message.byteLength <= ndef.maxSize`, before writing — [NDEF](#ndef). |
 | **iOS: the session ends by itself** | Expected. CoreNFC closes an idle session and reports it through `onError`. |
+| **Android 16+: a tag that used to open the app stopped doing it** | Either the user switched the app off *Launch via NFC*, or the tag holds a web link, which now goes to `ACTION_VIEW` — [Android 16 and 17](#android-16-and-17). |
+| **Android 17: nothing happens on a tap, with nothing in the log** | The receiving activity is missing `android.permission.DISPATCH_NFC_MESSAGE`, or the app is force-stopped. `checkTagIntentSetup()` reports the first — [Android 16 and 17](#android-16-and-17). |
+| `setObserveModeEnabled` returns false | Only the preferred service may change observe mode. Call `setPreferredService(true)` first — [Host card emulation](#host-card-emulation). |
+| `PlatformException(unsupported_api_level)` | The device is older than the API level that capability needs. Where a probe exists — secure NFC, host card emulation, observe mode, the tag-scan allowlist — ask it first; probes answer false rather than throwing. `setDiscoveryTechnology` has no probe, so catch the exception instead. |
+
+## Android 16 and 17
+
+Two releases of Android changed how a tag *intent* reaches an app, and both fail silently:
+the tap does nothing, nothing is logged, and the app has no way to notice. Neither affects
+reader sessions or foreground dispatch, which are the durable way to read a tag and are
+untouched by everything below.
+
+**Ask the platform rather than guessing.** One call reports both:
+
+```dart
+final setup = await android.NfcUtilAndroid.instance.checkTagIntentSetup();
+if (!setup.isHealthy) debugPrint('$setup');
+```
+
+### Android 16 (API 36): the user can switch your app off
+
+Android 16 added a per-app allowlist, because apps with NFC intent filters were being pulled
+to the foreground every time the phone touched a credit card or a watch. The switch lives in
+*Settings > Apps > Special app access > Launch via NFC*, and the user is asked the first time
+your app is launched by a tag.
+
+```dart
+if (!await android.NfcUtilAndroid.instance.isTagIntentAllowed()) {
+  // Nothing can be granted programmatically; this only takes the user to the switch.
+  await android.NfcUtilAndroid.instance.openTagIntentPreferenceSettings();
+}
+```
+
+`isTagIntentAllowed()` returns true on a device with no allowlist, so false always means the
+user actually said no.
+
+### Android 16: web links no longer fire `NDEF_DISCOVERED`
+
+A tag holding an `http://` or `https://` URI record now triggers `ACTION_VIEW` instead. From
+Android 17 it does not even do that on its own: the user gets an "open link" notification and
+has to act on it.
+
+If your manifest filter matched web URLs, add an `ACTION_VIEW` filter for your own domain, or
+move to Android App Links. Reader sessions still see these tags exactly as before.
+
+### Android 17 (API 37): the receiving activity needs a permission
+
+From Android 17, an app targeting API 37 or higher receives NFC intents **only** on an
+activity declaring:
+
+```xml
+android:permission="android.permission.DISPATCH_NFC_MESSAGE"
+```
+
+`checkTagIntentSetup().unguardedActivities` lists the activities in your app that answer an
+NFC intent without it. It finds them by probing — Android exposes no way to read an activity's
+intent filters — covering a filter with no data, one with any MIME type, and the `http` and
+`https` schemes; a filter declaring only some other scheme is not seen.
+
+`android:permission` guards the **whole** activity, so it cannot go on a launcher activity
+that also carries the NFC filters — the launcher entry would be gated too. Move the filters
+to an `<activity-alias>` that carries the permission, and leave the launcher activity
+unguarded. [The example's manifest](example/android/app/src/main/AndroidManifest.xml) ships
+exactly that shape.
+
+**It is safe on older devices, and that was measured rather than assumed.** The permission is
+not new: `dumpsys package` reports it as declared by the platform itself
+(`sourcePackage=android`, `prot=signature|privileged`) on both an API 37 Pixel and an API 28
+phone, and held by the NFC system service on both (`DISPATCH_NFC_MESSAGE: granted=true`). API
+37 newly *enforces* an existing permission. So the NFC service can still start a guarded
+activity on an old OS, while ordinary apps cannot — which is the point. A guarded
+`<activity-alias>` also registers and resolves `TECH_DISCOVERED` on both.
+
+### Android 17: no dispatch to a stopped app
+
+The system no longer delivers NFC intents to an app that has never been launched by the user
+or has been force-stopped. `takeInitialTag()` returns null in that state until the app has
+been opened once.
+
+### `ACTION_TAG_DISCOVERED` is deprecated
+
+Use `NDEF_DISCOVERED` or `TECH_DISCOVERED` in new manifests. The plugin still accepts tags
+delivered under the old action, because every device up to API 36 still sends it.
 
 ## The four libraries
 
@@ -412,6 +511,13 @@ authentication still applies to the reads that follow it.
 
 ## Background tag reading
 
+Manifest intent filters are the fragile path on Android 16 and 17: the user can switch the
+app off the tag-scan allowlist, web-link tags no longer fire `NDEF_DISCOVERED`, an activity
+without `DISPATCH_NFC_MESSAGE` is never dispatched to, and a force-stopped app gets nothing.
+All four fail in silence — see [Android 16 and 17](#android-16-and-17), and call
+`checkTagIntentSetup()` to find out which one you are in. Reader sessions and foreground
+dispatch are unaffected by every one of them.
+
 ```dart
 // Android: the tag that launched the app, consumed by the first call.
 final tag = await android.NfcUtilAndroid.instance.takeInitialTag();
@@ -462,6 +568,67 @@ claim the same identifier, and the second registration is refused.
 fully stopped is answered with `6D00` rather than queued. Emulating a card while the app is
 closed needs a background engine, which this release does not have.
 
+### Observe mode — watching a reader without answering it
+
+Android 15 (API 35) and above. With observe mode on, the phone stops transacting and reports
+the reader's polling loop instead, so an app can see which reader it is at and decide what to
+present before anything is exchanged.
+
+```dart
+final hce = android.HostCardEmulation.instance;
+if (!await hce.isObserveModeSupported()) return;
+
+hce.onPollingFrames = (frames) {
+  for (final frame in frames) debugPrint('${frame.type.name} ${frame.data}');
+};
+
+// The order matters. Only the preferred service may change observe mode, so anything else
+// returns false.
+await hce.registerPollingLoopFilter(filter: '6A01', autoTransact: false);
+await hce.setPreferredService(true);
+await hce.setObserveModeEnabled(true);
+```
+
+`registerAids` is **not** a prerequisite: an app can watch readers without offering to be a
+card. The calls above enable the plugin's emulation service themselves, because the platform
+will not make a disabled service the preferred one. That enablement is the same persistent
+component state `registerAids` warns about, and `unregisterAids()` is the way back from it
+either way — it returns false when there were no AIDs to remove, which is not a failure.
+
+`autoTransact: true` makes the platform leave observe mode by itself the moment a frame
+matches, so the exchange that follows is answered rather than watched. That is the low-latency
+path — a reader will not wait for a round trip to Dart and back — and the trade is that you
+give up the chance to inspect the reader first.
+
+**`registerPollingLoopPatternFilter` does not take a regular expression**, despite the name.
+Measured on Android 17: the pattern must *begin* with hex digits and may then use `*` and `?`.
+`6A*` and `6A01` are accepted; `.*`, a bare `*`, `????` and `*6A*` are each rejected with
+`PlatformException('unavailable', 'Polling loop pattern filters may only contain hexadecimal
+numbers, ?s and *s')`. Case does not matter.
+
+Filters are persistent, like `registerAids`: `removePollingLoopFilter` and
+`removePollingLoopPatternFilter` are the way back. `setDefaultToObserveMode(true)` makes the
+service come up in observe mode whenever it becomes preferred, instead of needing a call on
+every foreground.
+
+`allowOneTransaction()`, which lets a single exchange through without leaving observe mode, is
+Android 17 and is not in this release.
+
+### Card-emulation events
+
+Android 16 (API 36) and above. AID conflicts, unrouted AIDs, preferred-service changes,
+observe-mode changes, remote-field changes and NFC stack errors, as one stream:
+
+```dart
+if (await android.NfcUtilAndroid.instance.enableNfcEvents()) {
+  android.NfcUtilAndroid.instance.onNfcEvent.listen((event) => debugPrint('$event'));
+}
+```
+
+Registration is explicit because it costs a framework callback the plugin has to unregister
+again; call `disableNfcEvents()` when you are done, although the plugin also unregisters when
+the engine detaches. `enableNfcEvents()` returns false below API 36.
+
 ## Apple Wallet passes
 
 ```dart
@@ -507,7 +674,10 @@ whatever was armed before rather than clearing it.
 ## Testing
 
 The NDEF layer is pure Dart and fully testable. For session logic, put a fake in place of
-the generated host API — see [`test/session_test.dart`](test/session_test.dart).
+the generated host API — see [`test/session_test.dart`](test/session_test.dart), and
+[`test/android_platform_test.dart`](test/android_platform_test.dart) /
+[`test/hce_test.dart`](test/hce_test.dart) for the capability probes and the polling-frame
+and event callbacks.
 
 In a widget test with no mock registered, a channel call never completes, so an app should
 treat "availability unknown" as "not ready" rather than assuming a failure will arrive.
@@ -546,6 +716,14 @@ posters, background tag reading, host card emulation, Apple VAS,
 `NfcUtilIos.tagSessionRestartPolling`, `tagSessionSetAlertMessage` and
 `vasSessionSetAlertMessage`, raw `NfcUtilAndroid.enableReaderMode`, foreground dispatch,
 configurable presence-check delay, and typed Android error codes.
+
+## Roadmap
+
+[ROADMAP.md](ROADMAP.md) says what is deliberately not in this release and why: the three
+separate toolchain floors the remaining Android and iOS surface would impose — API 36.1 is a
+much smaller step than API 37, and most of what looks like Android 17 is actually 36.1 — what
+the two-device hardware run did and did not cover, three maintenance items found by reading
+the SDKs, and the APIs this package should not try to expose at all.
 
 ## License
 

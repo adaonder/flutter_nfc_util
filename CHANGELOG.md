@@ -1,3 +1,126 @@
+## 3.2.0
+
+Android caught up. Three OS releases had added NFC surface this package did not reach --
+observe mode and polling loop filters in Android 15, card-emulation events and a tag-scan
+allowlist in Android 16, a permission on the receiving activity in Android 17 -- and two of
+those changes break existing apps *silently*, with the tap simply doing nothing.
+
+**The one entry worth reading is the first.** It is a fix, it needs no code change, and until
+now it was quietly costing installs.
+
+Nothing here is breaking: `compileSdk` stays at 36, `minSdk` at 24, the iOS deployment target
+at 15.6, and no value was added to any public enum. Every new capability answers a probe with
+`false` on a device too old for it, and every new *action* throws
+`PlatformException('unsupported_api_level')` rather than doing nothing.
+
+* **Apps depending on this plugin were being filtered off every device without NFC.** *(Fix
+  -- every app that depends on this package, whether or not it uses anything else in this
+  release.)* The plugin's manifest asked for `android.permission.NFC` without declaring the
+  matching `<uses-feature android:name="android.hardware.nfc" android:required="false">`.
+  Play *infers* the feature as required from the permission, so an app offering NFC as one
+  feature among many was invisible on Play to anyone whose phone has no NFC controller -- and
+  nothing in the app, the build or the console said so. The feature is now declared, and not
+  required. An app that genuinely cannot work without NFC overrides it with `tools:replace`;
+  see the README.
+
+* **`checkTagIntentSetup()` reports the two silent Android 16/17 failures.** *(New --
+  anyone whose app can be launched by a tag.)* Android 16 lets the user switch an app off a
+  per-app "Launch via NFC" allowlist. Android 17 refuses to dispatch NFC intents to an
+  activity that is not protected by `android.permission.DISPATCH_NFC_MESSAGE`. Both fail with
+  no error, no log line and no way for the app to notice. One call now answers both, and
+  lists by name the activities in your app that answer an NFC intent without the permission.
+  It finds them by probing, because Android exposes no way to read an activity's intent
+  filters; the README says exactly which filter shapes the probe covers.
+
+  Also `isTagIntentAllowed()`, `isTagIntentAppPreferenceSupported()` and
+  `openTagIntentPreferenceSettings()`, which takes the user to the switch. `isTagIntentAllowed`
+  answers true on a device with no allowlist, so false always means the user actually said no.
+
+* **Observe mode works without registering AIDs, and the polling-loop pattern syntax is
+  documented correctly.** *(Fix, found by review before release.)* Two defects in the feature
+  above, both caught on an Android 17 device rather than by reading the code. The plugin only
+  ever claimed its emulation service inside `registerAids`, so the documented observe-mode
+  sequence turned observe mode on into nothing: measured, `setObserveModeEnabled` returned
+  false and `isObserveModeEnabled` stayed false, and even had it succeeded,
+  `processPollingFrames` drops every batch when no engine has claimed the bridge. The service
+  is now claimed by the observe-mode and polling-filter calls too, so an app can watch readers
+  without offering to be a card; after the fix the same sequence reports
+  `setObserveMode=true, isEnabled=true`. Separately, `registerPollingLoopPatternFilter` is
+  **not** a regular expression: the pattern must begin with hex digits and may then use `*`
+  and `?`, so the `'.*'` this package's own README and example used threw every time. `6A*`
+  and `6A01` are accepted; `.*`, a bare `*`, `????` and `*6A*` are rejected.
+
+* **Observe mode and polling loop filters.** *(New -- host card emulation, Android 15 and
+  above.)* The phone can now watch a reader's polling loop without answering it, which is how
+  an app sees which terminal it is at before deciding what to present:
+  `isObserveModeSupported()`, `setObserveModeEnabled()`, `setDefaultToObserveMode()`,
+  `registerPollingLoopFilter()`, `registerPollingLoopPatternFilter()`, their removals, and
+  `onPollingFrames`. Frames arrive batched, carry their type, bytes, vendor gain and
+  timestamp, and a frame type this release has no name for still arrives rather than being
+  dropped -- a reader's proprietary probe is often the thing an app registered a filter for.
+
+  `setObserveModeEnabled` returns `false` rather than throwing when the app is not the
+  preferred service, because that is an ordinary state to be in. Call `setPreferredService(true)`
+  first.
+
+* **`setDiscoveryTechnology` and `getAntennaInfo`.** *(New -- Android 15 and Android 14
+  respectively.)* The first narrows what the controller polls for and answers as while your
+  activity is in the foreground -- narrower than reader mode, and reaching tags delivered by
+  intent too. An empty `listen` set stops the phone answering readers at all. The second
+  reports where the antennas are, in millimetres, for a "hold your tag here" hint; it returns
+  null on the many devices that publish no geometry.
+
+* **A card-emulation event stream.** *(New -- Android 16 and above.)* AID conflicts, unrouted
+  AIDs, preferred-service and observe-mode changes, remote-field changes and NFC stack errors,
+  as one `Stream<NfcEvent>` behind `enableNfcEvents()`. Registration is explicit rather than
+  implicit in listening, because it costs a framework callback the plugin has to unregister
+  again -- one left behind keeps the plugin, and through it the Flutter engine, alive after
+  teardown. The plugin unregisters on engine detach regardless.
+
+* **`ACTION_TAG_DISCOVERED` is deprecated as of Android 17, and still accepted.** *(No
+  change needed.)* Every device up to API 36 still delivers it, so dropping it would make a
+  working app go quiet the moment it was rebuilt against a newer `compileSdk`. New manifests
+  should use `NDEF_DISCOVERED` or `TECH_DISCOVERED`.
+
+* **A README section for Android 16 and 17, and four troubleshooting rows.** *(Docs.)* What
+  changed, what fails silently, and what to do. The `DISPATCH_NFC_MESSAGE` question was
+  measured on hardware rather than guessed at: the permission turns out not to be new at all
+  -- `dumpsys package` reports it as platform-declared (`sourcePackage=android`,
+  `signature|privileged`) and held by the NFC system service on an API 28 phone as well as on
+  an API 37 Pixel, so API 37 merely starts *enforcing* it. Guarding an activity with it is
+  therefore safe on old devices, and the example now ships the `<activity-alias>` as live
+  configuration rather than as a comment. Reader sessions and foreground dispatch are
+  unaffected by every Android 16 and 17 change, and the README now says so where it matters.
+
+* **The example's NFC intent filters moved to a guarded `<activity-alias>`.** *(Example.)*
+  `MainActivity` carried both the launcher filter and the NFC filters, and
+  `android:permission` guards a whole activity -- so the attribute could not go there without
+  gating the launcher. The alias takes the taps and carries the permission; `MainActivity`
+  stays unguarded. Verified on both devices: `checkTagIntentSetup()` reports `unguarded: []`
+  with the permission in place and names the alias without it.
+
+* **A sixth test layer, because a malformed manifest reached a device build.** *(Fix -- CI.)*
+  `tool/check_xml.py` parses every XML in the package and rejects `--` inside a comment, which
+  is illegal in XML and legal everywhere else this codebase writes em-dashes; and the Kotlin
+  step now also runs `:nfc_util:assembleDebug`, which is what actually processes the plugin
+  manifest. Neither `:nfc_util:test` nor any Dart layer reads that file, so a manifest that
+  did not parse used to surface only in a *consuming app's* build, naming a file its author
+  has never opened.
+
+* **The example app gained a `Capabilities` button and observe-mode controls.** *(Example.)*
+  The capability probes need no tag and no radio, so they answer on a phone with NFC switched
+  off -- which is exactly when you want to know what the device could do.
+
+Not in this release, and deliberately: everything that needs a compile SDK newer than 36, or
+an Xcode newer than the current one. That is a smaller set than it first looks -- Android now
+ships *minor* SDK releases, and most of what looks like Android 17 surface is in fact API
+36.1: the power-saving trio, the per-service screen-on/unlock switches, the polling-filter
+readback and `onOffHostAidSelected` all carry `since="36.1"`. Only `allowOneTransaction`, the
+reader-mode annotation pair and `getGestureExchangeAid` need API 37. On iOS, iOS 26.0 brings
+`NFCPaymentTagReaderSession` and 26.4 brings a run-time session configuration for the ISO 7816
+and FeliCa discovery lists. [ROADMAP.md](ROADMAP.md) has the verified split, the floor each
+group would impose, and the three maintenance items reading the SDKs turned up.
+
 ## 3.1.2
 
 Documentation only. The plugin, the example app and the tests are byte for byte what 3.1.1

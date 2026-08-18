@@ -4,6 +4,7 @@
 // ACTIONS banner below in the same order the buttons appear:
 //
 //   Build & decode NDEF -> NdefMessage.toBytes / fromBytes   (no tag, no radio)
+//   Capabilities (Android) -> the probes, plus checkTagIntentSetup  (no tag, no radio)
 //   Read                -> NfcUtil.startSession + Ndef.from(tag)
 //   Write text          -> Ndef.write / NdefFormatable.format
 //   Write poster        -> SmartPosterRecord.create
@@ -11,6 +12,7 @@
 //   Scan many           -> invalidateAfterFirstReadIos: false
 //   Barcode  (Android)  -> discoverNfcBarcodeAndroid: true
 //   Emulate card (Android) -> HostCardEmulation  (changes persistent device state)
+//   Observe reader (Android) -> HostCardEmulation observe mode + polling frames (API 35)
 //   Wallet pass (iOS)   -> NfcUtilIos.vasSessionBegin
 //
 // The four imports below are the package's four public libraries; nothing else is needed.
@@ -102,6 +104,7 @@ class _HomePageState extends State<HomePage> {
   String? _busy;
 
   bool _emulating = false;
+  bool _observing = false;
 
   bool get _isAndroid => !kIsWeb && Platform.isAndroid;
   bool get _isIos => !kIsWeb && Platform.isIOS;
@@ -135,6 +138,9 @@ class _HomePageState extends State<HomePage> {
     // rebooting and the app being updated, and unregisterAids is the only way back. Best
     // effort only: a hard kill still leaves the device enrolled.
     if (_emulating) unawaited(_stopCardEmulation(quiet: true));
+    // Observe mode does not survive the process, but the polling-loop filter does -- it is
+    // stored against the service the same way the AID group is.
+    if (_observing) unawaited(_stopObserveMode(quiet: true));
     super.dispose();
   }
 
@@ -605,6 +611,85 @@ class _HomePageState extends State<HomePage> {
     _write('emulating a card: tap a reader');
   }
 
+  /// Everything the running device says it can do, in one place. Android only, no tag.
+  ///
+  /// Every one of these is a capability *probe*: it answers false or null on a device too
+  /// old rather than throwing, which is what lets an app decide what to offer before it
+  /// offers it. The matching actions are the ones that throw `unsupported_api_level`.
+  Future<void> _checkCapabilities() async {
+    final nfc = android.NfcUtilAndroid.instance;
+    final hce = android.HostCardEmulation.instance;
+
+    _write('capabilities');
+    _write('  secure NFC supported: ${await nfc.isSecureNfcSupported()}');
+    _write('  host card emulation: ${await hce.isSupported()}');
+    _write('  observe mode (API 35): ${await hce.isObserveModeSupported()}');
+    _write('  tag-scan allowlist (API 36): ${await nfc.isTagIntentAppPreferenceSupported()}');
+
+    final antenna = await nfc.getAntennaInfo();
+    _write('  antenna geometry (API 34): ${antenna ?? 'not published by this device'}');
+
+    // The two silent failures, in the order they were introduced. Neither logs anything on
+    // the device itself: a tap simply does nothing.
+    final setup = await nfc.checkTagIntentSetup();
+    _write('  tag intents reachable: ${setup.isHealthy}');
+    if (!setup.tagIntentAllowed) {
+      _write('    the user has switched this app off "Launch via NFC"', isError: true);
+    }
+    for (final activity in setup.unguardedActivities) {
+      _write('    $activity has an NFC filter but no DISPATCH_NFC_MESSAGE', isError: true);
+    }
+  }
+
+  /// Watches a reader's polling loop without answering it. Android 15 and above.
+  ///
+  /// The order matters and is the thing worth copying: register a filter, become the
+  /// preferred service, and only then switch observe mode on. Only the preferred service
+  /// may change it, so doing this the other way round returns false.
+  Future<void> _startObserveMode() async {
+    final hce = android.HostCardEmulation.instance;
+
+    if (!await hce.isObserveModeSupported()) {
+      _write('this device cannot observe polling loops (needs Android 15)', isError: true);
+      return;
+    }
+
+    hce.onPollingFrames = (frames) {
+      for (final frame in frames) {
+        _write('  frame ${frame.type.name}${frame.data.isEmpty ? '' : ': ${_hex(frame.data)}'}');
+      }
+    };
+
+    // Not a regular expression: the platform takes hex digits first, then `*` and `?`, and
+    // rejects '.*' or a bare '*' outright. '6A*' is the NFC-A poll family, which is broad
+    // enough to see something on any reader and narrow enough to be a real filter -- a real
+    // app names the reader it cares about, so the phone is not woken by every terminal it
+    // passes.
+    await hce.registerPollingLoopPatternFilter(pattern: '6A*');
+    await hce.setPreferredService(true);
+
+    if (!await hce.setObserveModeEnabled(true)) {
+      _write('observe mode was refused -- this app is not the preferred service', isError: true);
+      await _stopObserveMode(quiet: true);
+      return;
+    }
+
+    _observing = true;
+    if (mounted) setState(() {});
+    _write('observing: hold the phone to a reader, nothing will be answered');
+  }
+
+  Future<void> _stopObserveMode({bool quiet = false}) async {
+    final hce = android.HostCardEmulation.instance;
+    await hce.setObserveModeEnabled(false);
+    await hce.removePollingLoopPatternFilter('6A*');
+    if (!_emulating) await hce.setPreferredService(false);
+    hce.onPollingFrames = null;
+    _observing = false;
+    if (mounted) setState(() {});
+    if (!quiet) _write('stopped observing');
+  }
+
   Future<void> _stopCardEmulation({bool quiet = false}) async {
     final hce = android.HostCardEmulation.instance;
     await hce.setPreferredService(false);
@@ -683,6 +768,14 @@ class _HomePageState extends State<HomePage> {
                       onPressed: busy ? null : _codecRoundTrip,
                       child: const Text('Build & decode NDEF'),
                     ),
+                    // Also never gated on availability: the probes answer on a phone with
+                    // the radio switched off, which is exactly when you want to know what
+                    // the device could do.
+                    if (_isAndroid)
+                      FilledButton.tonal(
+                        onPressed: busy ? null : _checkCapabilities,
+                        child: const Text('Capabilities'),
+                      ),
                   ],
                 ),
                 _ActionGroup(
@@ -712,6 +805,17 @@ class _HomePageState extends State<HomePage> {
                       OutlinedButton(
                         onPressed: _emulating ? () => _stopCardEmulation() : null,
                         child: const Text('Stop emulating'),
+                      ),
+                      // Observe mode is the opposite of emulating: the phone watches the
+                      // reader instead of answering it. Separate buttons because they are
+                      // separate decisions, and an app can want either without the other.
+                      FilledButton(
+                        onPressed: ready && !_observing ? _startObserveMode : null,
+                        child: const Text('Observe reader'),
+                      ),
+                      OutlinedButton(
+                        onPressed: _observing ? () => _stopObserveMode() : null,
+                        child: const Text('Stop observing'),
                       ),
                     ],
                   ),

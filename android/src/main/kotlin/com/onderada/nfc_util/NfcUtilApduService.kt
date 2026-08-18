@@ -1,6 +1,7 @@
 package com.onderada.nfc_util
 
 import android.nfc.cardemulation.HostApduService
+import android.nfc.cardemulation.PollingFrame
 import android.os.Bundle
 
 /**
@@ -16,6 +17,15 @@ internal interface HceBridge {
     fun onApduReceived(apdu: ByteArray)
 
     fun onHceDeactivated(reason: Int)
+
+    /**
+     * Polling frames seen while observe mode is on. Also called on a binder thread.
+     *
+     * Already converted to the wire type: keeping `android.nfc.cardemulation.PollingFrame`
+     * out of this interface's signatures is what lets the bridge be loaded unchanged on the
+     * API 24 devices this plugin still supports, where that class does not exist.
+     */
+    fun onPollingFrames(frames: List<PollingFramePigeon>)
 }
 
 /**
@@ -46,6 +56,19 @@ class NfcUtilApduService : HostApduService() {
     override fun onDeactivated(reason: Int) {
         if (activeService === this) activeService = null
         activeBridge?.onHceDeactivated(reason)
+    }
+
+    /**
+     * Reader polling frames, delivered instead of APDUs while observe mode is on.
+     *
+     * Only ever called on API 35 and above -- the base class has no such method below it --
+     * so the `PollingFrame` reference in the body is safe. Generic erasure keeps it out of
+     * the method descriptor, so the class still verifies on older devices.
+     */
+    override fun processPollingFrames(frames: MutableList<PollingFrame>) {
+        val bridge = activeBridge ?: return
+        activeService = this
+        bridge.onPollingFrames(frames.map(TagMapper::pollingFrame))
     }
 
     internal companion object {

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Runs every test layer this package has, and reports which ones failed.
 #
-# There are five, and three of them only resolve from a directory that is not the package
+# There are six, and three of them only resolve from a directory that is not the package
 # root, which is the whole reason this script exists:
 #
+#   XML              tool/check_xml.py                 (root -- manifests)
 #   Dart unit        flutter test                      (root)
 #   Widget           flutter test                      (example/)
 #   Kotlin           ./gradlew :nfc_util:test          (example/android/ -- see below)
@@ -15,7 +16,7 @@
 # Xcode and the other needs a phone with NFC.
 #
 # Unlike tool/generate_pigeon.sh this does NOT use `set -e`: a test runner that stops at the
-# first failure hides the other four layers. Every step runs, and the exit code is non-zero
+# first failure hides the other five layers. Every step runs, and the exit code is non-zero
 # if any of them failed.
 set -uo pipefail
 
@@ -85,6 +86,9 @@ in_dir() {
 if [[ $run_dart -eq 1 ]]; then
     # No --line-length: the width comes from the `formatter:` block in analysis_options.yaml,
     # which is also what pana reads when it scores the package on pub.dev.
+    # First, because it is instant and its failure mode is the most expensive: a malformed
+    # manifest breaks every consuming app's build, not this package's.
+    step "xml" python3 tool/check_xml.py
     step "dart format" dart format --output=none --set-exit-if-changed .
     step "flutter analyze" flutter analyze
     step "flutter analyze (example)" in_dir example flutter analyze --no-pub
@@ -105,6 +109,12 @@ if [[ $run_kotlin -eq 1 ]]; then
         step "flutter build apk --config-only" in_dir example flutter build apk --config-only
     fi
     step "kotlin unit tests" in_dir example/android ./gradlew :nfc_util:test --console=plain
+    # Not covered by the tests above: :nfc_util:test never processes the manifest, so a
+    # plugin manifest that does not parse used to reach a consumer's build untouched and fail
+    # there, in a file the app author has never opened. assembleDebug runs
+    # processDebugManifest, which is the step that actually reads it.
+    step "kotlin library assembles (processes the manifest)" \
+        in_dir example/android ./gradlew :nfc_util:assembleDebug --console=plain
 fi
 
 # ---------------------------------------------------------------------------------------

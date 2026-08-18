@@ -55,6 +55,9 @@ class NfcCallbacks implements NfcFlutterApi {
   /// Android. The emulated card was deactivated.
   void Function(int reason)? hceDeactivatedHandler;
 
+  /// Android. Reader polling frames, while observe mode is on.
+  void Function(List<PollingFramePigeon> frames)? pollingFramesHandler;
+
   /// Android. A tag arrived by intent rather than by a reader session.
   Future<void> Function(NfcTag tag)? intentTagHandler;
 
@@ -64,6 +67,13 @@ class NfcCallbacks implements NfcFlutterApi {
   /// Broadcast, and never closed: the router is process-wide, so closing it would break
   /// every later listener. Fed on Android only; iOS has no NFC toggle to watch.
   final StreamController<NfcAdapterState> adapterState = StreamController<NfcAdapterState>.broadcast();
+
+  /// Card-emulation events. Broadcast and never closed, for the same reason as [adapterState].
+  ///
+  /// Typed with the wire class rather than the public one: the public event lives in the
+  /// Android library, which sits above this router, and pulling it down here would make the
+  /// router depend on one platform's surface.
+  final StreamController<NfcEventPigeon> nfcEvents = StreamController<NfcEventPigeon>.broadcast();
 
   @override
   Future<void> onDiscovered(TagPigeon tag) => _deliver(tagHandler, tag);
@@ -166,6 +176,16 @@ class NfcCallbacks implements NfcFlutterApi {
   @override
   void onHceDeactivated(int reason) {
     hceDeactivatedHandler?.call(reason);
+  }
+
+  @override
+  void onPollingFrames(List<PollingFramePigeon> frames) {
+    pollingFramesHandler?.call(frames);
+  }
+
+  @override
+  void onNfcEvent(NfcEventPigeon event) {
+    nfcEvents.add(event);
   }
 
   @override

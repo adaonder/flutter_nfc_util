@@ -13,8 +13,19 @@
 /// ```
 library;
 
-export 'src/android/hce.dart' show HostCardEmulation;
-export 'src/android/platform.dart' show NfcReaderFlag, NfcUtilAndroid;
+export 'src/android/hce.dart' show HostCardEmulation, PollingFrame, PollingFrameType;
+export 'src/android/platform.dart'
+    show
+        NfcAntennaInfo,
+        NfcAntennaLocation,
+        NfcEvent,
+        NfcEventKind,
+        NfcInternalError,
+        NfcListenTech,
+        NfcPollTech,
+        NfcReaderFlag,
+        NfcUtilAndroid,
+        TagIntentSetup;
 export 'src/android/tags.dart'
     show
         IsoDep,

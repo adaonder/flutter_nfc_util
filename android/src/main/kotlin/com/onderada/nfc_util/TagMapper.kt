@@ -5,6 +5,7 @@ import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.TagLostException
+import android.nfc.cardemulation.PollingFrame
 import android.nfc.tech.IsoDep
 import android.nfc.tech.MifareClassic
 import android.nfc.tech.MifareUltralight
@@ -220,12 +221,98 @@ internal object TagMapper {
         }
     }
 
+    /**
+     * Folds the poll technologies into the argument `NfcAdapter.setDiscoveryTechnology` takes.
+     *
+     * `keep` wins outright and `disable` contributes nothing, because neither is a technology
+     * bit: the platform spells them as bit 31 and as zero respectively, so OR-ing either with
+     * a technology has no reading the controller could act on. An empty list therefore folds
+     * to `FLAG_READER_DISABLE`, which is exactly "poll for nothing" -- unlike
+     * [readerFlags], where an empty set is a mistake and falls back to everything. The
+     * difference is deliberate: reader mode with no flags is always wrong, while discovery
+     * technology with no flags is how an app turns polling off.
+     */
+    fun pollTechFlags(techs: List<PollTechPigeon>): Int {
+        if (techs.contains(PollTechPigeon.KEEP)) return NfcAdapter.FLAG_READER_KEEP
+        return techs.fold(0) { acc, tech ->
+            acc or when (tech) {
+                PollTechPigeon.NFC_A -> NfcAdapter.FLAG_READER_NFC_A
+                PollTechPigeon.NFC_B -> NfcAdapter.FLAG_READER_NFC_B
+                PollTechPigeon.NFC_F -> NfcAdapter.FLAG_READER_NFC_F
+                PollTechPigeon.NFC_V -> NfcAdapter.FLAG_READER_NFC_V
+                PollTechPigeon.DISABLE, PollTechPigeon.KEEP -> NfcAdapter.FLAG_READER_DISABLE
+            }
+        }
+    }
+
+    /** As [pollTechFlags], for the listen side. There is no NFC-V to listen as. */
+    fun listenTechFlags(techs: List<ListenTechPigeon>): Int {
+        if (techs.contains(ListenTechPigeon.KEEP)) return NfcAdapter.FLAG_LISTEN_KEEP
+        return techs.fold(0) { acc, tech ->
+            acc or when (tech) {
+                ListenTechPigeon.NFC_A -> NfcAdapter.FLAG_LISTEN_NFC_PASSIVE_A
+                ListenTechPigeon.NFC_B -> NfcAdapter.FLAG_LISTEN_NFC_PASSIVE_B
+                ListenTechPigeon.NFC_F -> NfcAdapter.FLAG_LISTEN_NFC_PASSIVE_F
+                ListenTechPigeon.DISABLE, ListenTechPigeon.KEEP -> NfcAdapter.FLAG_LISTEN_DISABLE
+            }
+        }
+    }
+
+    /**
+     * Maps `PollingFrame.getType()`.
+     *
+     * Split out from the frame itself so it can be tested: `PollingFrame` has no public
+     * constructor, so the only part of the conversion a unit test can reach is this one. The
+     * constants are the ASCII codes of 'A', 'B', 'F', 'O' (field on), 'X' (field off) and
+     * 'U'; anything else is a frame type this release does not know about, which is a thing
+     * to report rather than to drop.
+     */
+    fun pollingFrameType(type: Int): PollingFrameTypePigeon = when (type) {
+        PollingFrame.POLLING_LOOP_TYPE_A -> PollingFrameTypePigeon.A
+        PollingFrame.POLLING_LOOP_TYPE_B -> PollingFrameTypePigeon.B
+        PollingFrame.POLLING_LOOP_TYPE_F -> PollingFrameTypePigeon.F
+        PollingFrame.POLLING_LOOP_TYPE_ON -> PollingFrameTypePigeon.ON
+        PollingFrame.POLLING_LOOP_TYPE_OFF -> PollingFrameTypePigeon.OFF
+        else -> PollingFrameTypePigeon.UNKNOWN
+    }
+
+    /**
+     * Converts one polling frame. API 35 and above; the caller has already checked.
+     *
+     * Every getter is wrapped because the vendor gain in particular is optional in the HAL,
+     * and a device that does not report it throws rather than returning a sentinel. Losing
+     * the whole frame over a field an app probably does not read would be the same mistake
+     * [describe] exists to prevent.
+     */
+    fun pollingFrame(frame: PollingFrame) = PollingFramePigeon(
+        type = pollingFrameType(runCatching { frame.type }.getOrDefault(PollingFrame.POLLING_LOOP_TYPE_UNKNOWN)),
+        data = runCatching { frame.data }.getOrDefault(ByteArray(0)),
+        vendorSpecificGain = runCatching { frame.vendorSpecificGain.toLong() }.getOrDefault(-1L),
+        timestamp = runCatching { frame.timestamp }.getOrDefault(0L),
+        triggeredAutoTransact = runCatching { frame.triggeredAutoTransact }.getOrDefault(false),
+    )
+
     fun adapterState(state: Int): AdapterStatePigeon = when (state) {
         NfcAdapter.STATE_OFF -> AdapterStatePigeon.OFF
         NfcAdapter.STATE_TURNING_ON -> AdapterStatePigeon.TURNING_ON
         NfcAdapter.STATE_ON -> AdapterStatePigeon.ON
         NfcAdapter.STATE_TURNING_OFF -> AdapterStatePigeon.TURNING_OFF
         else -> AdapterStatePigeon.OFF
+    }
+
+    /**
+     * `CardEmulation.NFC_INTERNAL_ERROR_*`.
+     *
+     * Spelled as literals rather than the constants, because those are API 36 and this
+     * mapping is reached from a unit test that runs against no particular API level. The
+     * values are frozen platform constants; the `else` covers a code a later release adds.
+     */
+    fun internalError(code: Int): NfcInternalErrorPigeon = when (code) {
+        0 -> NfcInternalErrorPigeon.UNKNOWN
+        1 -> NfcInternalErrorPigeon.NFC_CRASH_RESTART
+        2 -> NfcInternalErrorPigeon.NFC_HARDWARE_ERROR
+        3 -> NfcInternalErrorPigeon.COMMAND_TIMEOUT
+        else -> NfcInternalErrorPigeon.UNKNOWN
     }
 
     /**

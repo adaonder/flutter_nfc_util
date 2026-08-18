@@ -221,6 +221,65 @@ enum ReaderFlagPigeon: Int, CaseIterable {
   case skipNdefCheck = 6
 }
 
+/// What `NfcAdapter.setDiscoveryTechnology` polls for. Android only, API 35 and above.
+///
+/// [disable] and [keep] are not technologies and do not combine with one: the platform
+/// spells them as `FLAG_READER_DISABLE` (no bits at all) and `FLAG_READER_KEEP` (bit 31),
+/// so a set holding either alongside a technology has no meaningful reading.
+enum PollTechPigeon: Int, CaseIterable {
+  case nfcA = 0
+  case nfcB = 1
+  case nfcF = 2
+  case nfcV = 3
+  case disable = 4
+  case keep = 5
+}
+
+/// What `NfcAdapter.setDiscoveryTechnology` listens as. Android only, API 35 and above.
+///
+/// There is no NFC-V entry: the platform offers `FLAG_LISTEN_NFC_PASSIVE_A`, `_B` and `_F`
+/// only. See [PollTechPigeon] for [disable] and [keep].
+enum ListenTechPigeon: Int, CaseIterable {
+  case nfcA = 0
+  case nfcB = 1
+  case nfcF = 2
+  case disable = 3
+  case keep = 4
+}
+
+/// `PollingFrame.POLLING_LOOP_TYPE_*`. Android only, API 35 and above.
+enum PollingFrameTypePigeon: Int, CaseIterable {
+  case a = 0
+  case b = 1
+  case f = 2
+  case off = 3
+  case on = 4
+  case unknown = 5
+}
+
+/// Which `CardEmulation.NfcEventCallback` method fired. Android only, API 36 and above.
+///
+/// One flat kind rather than seven callbacks: the interface gains methods with the platform
+/// -- API 37 adds `onOffHostAidSelected` -- and a single event class absorbs those without a
+/// change to the wire.
+enum NfcEventKindPigeon: Int, CaseIterable {
+  case preferredServiceChanged = 0
+  case observeModeStateChanged = 1
+  case aidConflictOccurred = 2
+  case aidNotRouted = 3
+  case nfcStateChanged = 4
+  case remoteFieldChanged = 5
+  case internalError = 6
+}
+
+/// `CardEmulation.NFC_INTERNAL_ERROR_*`. Android only, API 36 and above.
+enum NfcInternalErrorPigeon: Int, CaseIterable {
+  case unknown = 0
+  case nfcCrashRestart = 1
+  case nfcHardwareError = 2
+  case commandTimeout = 3
+}
+
 /// Selects which `android.nfc.tech` class a tag operation runs against.
 ///
 /// Collapsing the technology into a parameter is what lets one `transceive` replace the
@@ -542,6 +601,298 @@ struct SessionConfigPigeon: Hashable, CustomStringConvertible {
 
   public var description: String {
     return "SessionConfigPigeon(pollingOptions: \(String(describing: pollingOptions)), alertMessage: \(String(describing: alertMessage)), invalidateAfterFirstRead: \(String(describing: invalidateAfterFirstRead)), noPlatformSounds: \(String(describing: noPlatformSounds)), skipNdefCheck: \(String(describing: skipNdefCheck)), discoverNfcBarcode: \(String(describing: discoverNfcBarcode)), presenceCheckDelayMillis: \(String(describing: presenceCheckDelayMillis)))"
+  }
+}
+
+/// One frame of the reader's polling loop, delivered while observe mode is on.
+///
+/// Android only, API 35 and above.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct PollingFramePigeon: Hashable, CustomStringConvertible {
+  var type: PollingFrameTypePigeon
+  /// The frame bytes. Empty for the field-on and field-off frames, which carry no data.
+  var data: FlutterStandardTypedData
+  /// The controller's own measure of field strength, in vendor-defined units. Zero on a
+  /// device whose stack does not report it.
+  var vendorSpecificGain: Int64
+  /// `SystemClock.uptimeMillis` when the controller saw the frame, wrapping at 2^32.
+  var timestamp: Int64
+  /// Whether this frame matched a filter registered with `autoTransact`, which takes the
+  /// device out of observe mode for the exchange that follows.
+  var triggeredAutoTransact: Bool
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> PollingFramePigeon? {
+    let type = pigeonVar_list[0] as! PollingFrameTypePigeon
+    let data = pigeonVar_list[1] as! FlutterStandardTypedData
+    let vendorSpecificGain = pigeonVar_list[2] as! Int64
+    let timestamp = pigeonVar_list[3] as! Int64
+    let triggeredAutoTransact = pigeonVar_list[4] as! Bool
+
+    return PollingFramePigeon(
+      type: type,
+      data: data,
+      vendorSpecificGain: vendorSpecificGain,
+      timestamp: timestamp,
+      triggeredAutoTransact: triggeredAutoTransact
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      type,
+      data,
+      vendorSpecificGain,
+      timestamp,
+      triggeredAutoTransact,
+    ]
+  }
+  static func == (lhs: PollingFramePigeon, rhs: PollingFramePigeon) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return PigeonPigeonInternal.deepEquals(lhs.type, rhs.type) && PigeonPigeonInternal.deepEquals(lhs.data, rhs.data) && PigeonPigeonInternal.deepEquals(lhs.vendorSpecificGain, rhs.vendorSpecificGain) && PigeonPigeonInternal.deepEquals(lhs.timestamp, rhs.timestamp) && PigeonPigeonInternal.deepEquals(lhs.triggeredAutoTransact, rhs.triggeredAutoTransact)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("PollingFramePigeon")
+    PigeonPigeonInternal.deepHash(value: type, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: data, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: vendorSpecificGain, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: timestamp, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: triggeredAutoTransact, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "PollingFramePigeon(type: \(String(describing: type)), data: \(String(describing: data)), vendorSpecificGain: \(String(describing: vendorSpecificGain)), timestamp: \(String(describing: timestamp)), triggeredAutoTransact: \(String(describing: triggeredAutoTransact)))"
+  }
+}
+
+/// One antenna's position, in millimetres from the top-left of the *back* of the device
+/// held face up in its natural orientation.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct AvailableNfcAntennaPigeon: Hashable, CustomStringConvertible {
+  var locationX: Int64
+  var locationY: Int64
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> AvailableNfcAntennaPigeon? {
+    let locationX = pigeonVar_list[0] as! Int64
+    let locationY = pigeonVar_list[1] as! Int64
+
+    return AvailableNfcAntennaPigeon(
+      locationX: locationX,
+      locationY: locationY
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      locationX,
+      locationY,
+    ]
+  }
+  static func == (lhs: AvailableNfcAntennaPigeon, rhs: AvailableNfcAntennaPigeon) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return PigeonPigeonInternal.deepEquals(lhs.locationX, rhs.locationX) && PigeonPigeonInternal.deepEquals(lhs.locationY, rhs.locationY)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("AvailableNfcAntennaPigeon")
+    PigeonPigeonInternal.deepHash(value: locationX, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: locationY, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "AvailableNfcAntennaPigeon(locationX: \(String(describing: locationX)), locationY: \(String(describing: locationY)))"
+  }
+}
+
+/// `NfcAdapter.getNfcAntennaInfo`. Android only, API 34 and above.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct NfcAntennaInfoPigeon: Hashable, CustomStringConvertible {
+  var deviceWidth: Int64
+  var deviceHeight: Int64
+  /// True for a foldable, where the coordinates describe the device unfolded.
+  var deviceFoldable: Bool
+  /// Empty on a device that reports NFC but publishes no antenna geometry.
+  var availableNfcAntennas: [AvailableNfcAntennaPigeon]
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> NfcAntennaInfoPigeon? {
+    let deviceWidth = pigeonVar_list[0] as! Int64
+    let deviceHeight = pigeonVar_list[1] as! Int64
+    let deviceFoldable = pigeonVar_list[2] as! Bool
+    let availableNfcAntennas = pigeonVar_list[3] as! [AvailableNfcAntennaPigeon]
+
+    return NfcAntennaInfoPigeon(
+      deviceWidth: deviceWidth,
+      deviceHeight: deviceHeight,
+      deviceFoldable: deviceFoldable,
+      availableNfcAntennas: availableNfcAntennas
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      deviceWidth,
+      deviceHeight,
+      deviceFoldable,
+      availableNfcAntennas,
+    ]
+  }
+  static func == (lhs: NfcAntennaInfoPigeon, rhs: NfcAntennaInfoPigeon) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return PigeonPigeonInternal.deepEquals(lhs.deviceWidth, rhs.deviceWidth) && PigeonPigeonInternal.deepEquals(lhs.deviceHeight, rhs.deviceHeight) && PigeonPigeonInternal.deepEquals(lhs.deviceFoldable, rhs.deviceFoldable) && PigeonPigeonInternal.deepEquals(lhs.availableNfcAntennas, rhs.availableNfcAntennas)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("NfcAntennaInfoPigeon")
+    PigeonPigeonInternal.deepHash(value: deviceWidth, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: deviceHeight, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: deviceFoldable, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: availableNfcAntennas, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "NfcAntennaInfoPigeon(deviceWidth: \(String(describing: deviceWidth)), deviceHeight: \(String(describing: deviceHeight)), deviceFoldable: \(String(describing: deviceFoldable)), availableNfcAntennas: \(String(describing: availableNfcAntennas)))"
+  }
+}
+
+/// One `CardEmulation.NfcEventCallback` notification.
+///
+/// Flat rather than a union: which optional fields are set follows from [kind], and Pigeon
+/// has no sealed-class support to express that on both sides.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct NfcEventPigeon: Hashable, CustomStringConvertible {
+  var kind: NfcEventKindPigeon
+  /// Set for [NfcEventKindPigeon.preferredServiceChanged],
+  /// [NfcEventKindPigeon.observeModeStateChanged] and
+  /// [NfcEventKindPigeon.remoteFieldChanged].
+  var enabled: Bool? = nil
+  /// Set for [NfcEventKindPigeon.aidConflictOccurred] and
+  /// [NfcEventKindPigeon.aidNotRouted].
+  var aid: String? = nil
+  /// Set for [NfcEventKindPigeon.nfcStateChanged].
+  var adapterState: AdapterStatePigeon? = nil
+  /// Set for [NfcEventKindPigeon.internalError].
+  var internalError: NfcInternalErrorPigeon? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> NfcEventPigeon? {
+    let kind = pigeonVar_list[0] as! NfcEventKindPigeon
+    let enabled: Bool? = nilOrValue(pigeonVar_list[1])
+    let aid: String? = nilOrValue(pigeonVar_list[2])
+    let adapterState: AdapterStatePigeon? = nilOrValue(pigeonVar_list[3])
+    let internalError: NfcInternalErrorPigeon? = nilOrValue(pigeonVar_list[4])
+
+    return NfcEventPigeon(
+      kind: kind,
+      enabled: enabled,
+      aid: aid,
+      adapterState: adapterState,
+      internalError: internalError
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      kind,
+      enabled,
+      aid,
+      adapterState,
+      internalError,
+    ]
+  }
+  static func == (lhs: NfcEventPigeon, rhs: NfcEventPigeon) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return PigeonPigeonInternal.deepEquals(lhs.kind, rhs.kind) && PigeonPigeonInternal.deepEquals(lhs.enabled, rhs.enabled) && PigeonPigeonInternal.deepEquals(lhs.aid, rhs.aid) && PigeonPigeonInternal.deepEquals(lhs.adapterState, rhs.adapterState) && PigeonPigeonInternal.deepEquals(lhs.internalError, rhs.internalError)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("NfcEventPigeon")
+    PigeonPigeonInternal.deepHash(value: kind, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: enabled, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: aid, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: adapterState, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: internalError, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "NfcEventPigeon(kind: \(String(describing: kind)), enabled: \(String(describing: enabled)), aid: \(String(describing: aid)), adapterState: \(String(describing: adapterState)), internalError: \(String(describing: internalError)))"
+  }
+}
+
+/// What the platform can tell an app about whether tag *intents* will reach it.
+///
+/// Android 16 gave the user a per-app "launch via NFC" switch, and Android 17 made the
+/// receiving activity's `android:permission` load-bearing. Both fail silently -- the tap
+/// simply does nothing -- so this exists to turn that into something an app can report.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct TagIntentSetupPigeon: Hashable, CustomStringConvertible {
+  /// True on API 37 and above, where an activity with an NFC intent filter is only
+  /// dispatched to when it declares `android.permission.DISPATCH_NFC_MESSAGE`.
+  var dispatchPermissionRequired: Bool
+  /// Activities in this package that declare an NFC intent filter without that permission.
+  /// Always empty when [dispatchPermissionRequired] is false.
+  var unguardedActivities: [String]
+  /// Whether the user has this app on the tag-scan allowlist. True below API 36, which has
+  /// no allowlist.
+  var tagIntentAllowed: Bool
+  /// Whether the device implements the allowlist at all.
+  var tagIntentPreferenceSupported: Bool
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> TagIntentSetupPigeon? {
+    let dispatchPermissionRequired = pigeonVar_list[0] as! Bool
+    let unguardedActivities = pigeonVar_list[1] as! [String]
+    let tagIntentAllowed = pigeonVar_list[2] as! Bool
+    let tagIntentPreferenceSupported = pigeonVar_list[3] as! Bool
+
+    return TagIntentSetupPigeon(
+      dispatchPermissionRequired: dispatchPermissionRequired,
+      unguardedActivities: unguardedActivities,
+      tagIntentAllowed: tagIntentAllowed,
+      tagIntentPreferenceSupported: tagIntentPreferenceSupported
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      dispatchPermissionRequired,
+      unguardedActivities,
+      tagIntentAllowed,
+      tagIntentPreferenceSupported,
+    ]
+  }
+  static func == (lhs: TagIntentSetupPigeon, rhs: TagIntentSetupPigeon) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return PigeonPigeonInternal.deepEquals(lhs.dispatchPermissionRequired, rhs.dispatchPermissionRequired) && PigeonPigeonInternal.deepEquals(lhs.unguardedActivities, rhs.unguardedActivities) && PigeonPigeonInternal.deepEquals(lhs.tagIntentAllowed, rhs.tagIntentAllowed) && PigeonPigeonInternal.deepEquals(lhs.tagIntentPreferenceSupported, rhs.tagIntentPreferenceSupported)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("TagIntentSetupPigeon")
+    PigeonPigeonInternal.deepHash(value: dispatchPermissionRequired, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: unguardedActivities, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: tagIntentAllowed, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: tagIntentPreferenceSupported, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "TagIntentSetupPigeon(dispatchPermissionRequired: \(String(describing: dispatchPermissionRequired)), unguardedActivities: \(String(describing: unguardedActivities)), tagIntentAllowed: \(String(describing: tagIntentAllowed)), tagIntentPreferenceSupported: \(String(describing: tagIntentPreferenceSupported)))"
   }
 }
 
@@ -1899,156 +2250,196 @@ private class PigeonPigeonCodecReader: FlutterStandardReader {
     case 133:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return AndroidTechPigeon(rawValue: enumResultAsInt)
+        return PollTechPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 134:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return TypeNameFormatPigeon(rawValue: enumResultAsInt)
+        return ListenTechPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 135:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return MifareClassicTypePigeon(rawValue: enumResultAsInt)
+        return PollingFrameTypePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 136:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return MifareUltralightTypePigeon(rawValue: enumResultAsInt)
+        return NfcEventKindPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 137:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return NfcBarcodeTypePigeon(rawValue: enumResultAsInt)
+        return NfcInternalErrorPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 138:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return MiFareFamilyPigeon(rawValue: enumResultAsInt)
+        return AndroidTechPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 139:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return NdefStatusPigeon(rawValue: enumResultAsInt)
+        return TypeNameFormatPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 140:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return Iso15693RequestFlagPigeon(rawValue: enumResultAsInt)
+        return MifareClassicTypePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 141:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return FeliCaPollingRequestCodePigeon(rawValue: enumResultAsInt)
+        return MifareUltralightTypePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 142:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return FeliCaPollingTimeSlotPigeon(rawValue: enumResultAsInt)
+        return NfcBarcodeTypePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 143:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return VasModePigeon(rawValue: enumResultAsInt)
+        return MiFareFamilyPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 144:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return VasResponseErrorCodePigeon(rawValue: enumResultAsInt)
+        return NdefStatusPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 145:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return ErrorSourcePigeon(rawValue: enumResultAsInt)
+        return Iso15693RequestFlagPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 146:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return SessionKindPigeon(rawValue: enumResultAsInt)
+        return FeliCaPollingRequestCodePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 147:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return AndroidErrorCodePigeon(rawValue: enumResultAsInt)
+        return FeliCaPollingTimeSlotPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 148:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return ReaderErrorCodePigeon(rawValue: enumResultAsInt)
+        return VasModePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 149:
-      return NdefRecordPigeon.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return VasResponseErrorCodePigeon(rawValue: enumResultAsInt)
+      }
+      return nil
     case 150:
-      return NdefMessagePigeon.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return ErrorSourcePigeon(rawValue: enumResultAsInt)
+      }
+      return nil
     case 151:
-      return SessionConfigPigeon.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return SessionKindPigeon(rawValue: enumResultAsInt)
+      }
+      return nil
     case 152:
-      return NfcAPigeon.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return AndroidErrorCodePigeon(rawValue: enumResultAsInt)
+      }
+      return nil
     case 153:
-      return NfcBPigeon.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return ReaderErrorCodePigeon(rawValue: enumResultAsInt)
+      }
+      return nil
     case 154:
-      return NfcFPigeon.fromList(self.readValue() as! [Any?])
+      return NdefRecordPigeon.fromList(self.readValue() as! [Any?])
     case 155:
-      return NfcVPigeon.fromList(self.readValue() as! [Any?])
+      return NdefMessagePigeon.fromList(self.readValue() as! [Any?])
     case 156:
-      return IsoDepPigeon.fromList(self.readValue() as! [Any?])
+      return SessionConfigPigeon.fromList(self.readValue() as! [Any?])
     case 157:
-      return MifareClassicPigeon.fromList(self.readValue() as! [Any?])
+      return PollingFramePigeon.fromList(self.readValue() as! [Any?])
     case 158:
-      return MifareUltralightPigeon.fromList(self.readValue() as! [Any?])
+      return AvailableNfcAntennaPigeon.fromList(self.readValue() as! [Any?])
     case 159:
-      return NfcBarcodePigeon.fromList(self.readValue() as! [Any?])
+      return NfcAntennaInfoPigeon.fromList(self.readValue() as! [Any?])
     case 160:
-      return NdefAndroidPigeon.fromList(self.readValue() as! [Any?])
+      return NfcEventPigeon.fromList(self.readValue() as! [Any?])
     case 161:
-      return NdefIosPigeon.fromList(self.readValue() as! [Any?])
+      return TagIntentSetupPigeon.fromList(self.readValue() as! [Any?])
     case 162:
-      return FeliCaPigeon.fromList(self.readValue() as! [Any?])
+      return NfcAPigeon.fromList(self.readValue() as! [Any?])
     case 163:
-      return Iso7816Pigeon.fromList(self.readValue() as! [Any?])
+      return NfcBPigeon.fromList(self.readValue() as! [Any?])
     case 164:
-      return Iso15693Pigeon.fromList(self.readValue() as! [Any?])
+      return NfcFPigeon.fromList(self.readValue() as! [Any?])
     case 165:
-      return MiFarePigeon.fromList(self.readValue() as! [Any?])
+      return NfcVPigeon.fromList(self.readValue() as! [Any?])
     case 166:
-      return TagPigeon.fromList(self.readValue() as! [Any?])
+      return IsoDepPigeon.fromList(self.readValue() as! [Any?])
     case 167:
-      return Iso7816ResponseApduPigeon.fromList(self.readValue() as! [Any?])
+      return MifareClassicPigeon.fromList(self.readValue() as! [Any?])
     case 168:
-      return FeliCaPollingResponsePigeon.fromList(self.readValue() as! [Any?])
+      return MifareUltralightPigeon.fromList(self.readValue() as! [Any?])
     case 169:
-      return FeliCaStatusFlagPigeon.fromList(self.readValue() as! [Any?])
+      return NfcBarcodePigeon.fromList(self.readValue() as! [Any?])
     case 170:
-      return FeliCaReadWithoutEncryptionResponsePigeon.fromList(self.readValue() as! [Any?])
+      return NdefAndroidPigeon.fromList(self.readValue() as! [Any?])
     case 171:
-      return FeliCaRequestServiceV2ResponsePigeon.fromList(self.readValue() as! [Any?])
+      return NdefIosPigeon.fromList(self.readValue() as! [Any?])
     case 172:
-      return FeliCaRequestSpecificationVersionResponsePigeon.fromList(self.readValue() as! [Any?])
+      return FeliCaPigeon.fromList(self.readValue() as! [Any?])
     case 173:
-      return Iso15693SystemInfoPigeon.fromList(self.readValue() as! [Any?])
+      return Iso7816Pigeon.fromList(self.readValue() as! [Any?])
     case 174:
-      return QueryNdefStatusResponsePigeon.fromList(self.readValue() as! [Any?])
+      return Iso15693Pigeon.fromList(self.readValue() as! [Any?])
     case 175:
-      return VasCommandConfigurationPigeon.fromList(self.readValue() as! [Any?])
+      return MiFarePigeon.fromList(self.readValue() as! [Any?])
     case 176:
-      return VasResponsePigeon.fromList(self.readValue() as! [Any?])
+      return TagPigeon.fromList(self.readValue() as! [Any?])
     case 177:
+      return Iso7816ResponseApduPigeon.fromList(self.readValue() as! [Any?])
+    case 178:
+      return FeliCaPollingResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 179:
+      return FeliCaStatusFlagPigeon.fromList(self.readValue() as! [Any?])
+    case 180:
+      return FeliCaReadWithoutEncryptionResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 181:
+      return FeliCaRequestServiceV2ResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 182:
+      return FeliCaRequestSpecificationVersionResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 183:
+      return Iso15693SystemInfoPigeon.fromList(self.readValue() as! [Any?])
+    case 184:
+      return QueryNdefStatusResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 185:
+      return VasCommandConfigurationPigeon.fromList(self.readValue() as! [Any?])
+    case 186:
+      return VasResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 187:
       return NfcErrorPigeon.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -2070,140 +2461,170 @@ private class PigeonPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? ReaderFlagPigeon {
       super.writeByte(132)
       super.writeValue(value.rawValue)
-    } else if let value = value as? AndroidTechPigeon {
+    } else if let value = value as? PollTechPigeon {
       super.writeByte(133)
       super.writeValue(value.rawValue)
-    } else if let value = value as? TypeNameFormatPigeon {
+    } else if let value = value as? ListenTechPigeon {
       super.writeByte(134)
       super.writeValue(value.rawValue)
-    } else if let value = value as? MifareClassicTypePigeon {
+    } else if let value = value as? PollingFrameTypePigeon {
       super.writeByte(135)
       super.writeValue(value.rawValue)
-    } else if let value = value as? MifareUltralightTypePigeon {
+    } else if let value = value as? NfcEventKindPigeon {
       super.writeByte(136)
       super.writeValue(value.rawValue)
-    } else if let value = value as? NfcBarcodeTypePigeon {
+    } else if let value = value as? NfcInternalErrorPigeon {
       super.writeByte(137)
       super.writeValue(value.rawValue)
-    } else if let value = value as? MiFareFamilyPigeon {
+    } else if let value = value as? AndroidTechPigeon {
       super.writeByte(138)
       super.writeValue(value.rawValue)
-    } else if let value = value as? NdefStatusPigeon {
+    } else if let value = value as? TypeNameFormatPigeon {
       super.writeByte(139)
       super.writeValue(value.rawValue)
-    } else if let value = value as? Iso15693RequestFlagPigeon {
+    } else if let value = value as? MifareClassicTypePigeon {
       super.writeByte(140)
       super.writeValue(value.rawValue)
-    } else if let value = value as? FeliCaPollingRequestCodePigeon {
+    } else if let value = value as? MifareUltralightTypePigeon {
       super.writeByte(141)
       super.writeValue(value.rawValue)
-    } else if let value = value as? FeliCaPollingTimeSlotPigeon {
+    } else if let value = value as? NfcBarcodeTypePigeon {
       super.writeByte(142)
       super.writeValue(value.rawValue)
-    } else if let value = value as? VasModePigeon {
+    } else if let value = value as? MiFareFamilyPigeon {
       super.writeByte(143)
       super.writeValue(value.rawValue)
-    } else if let value = value as? VasResponseErrorCodePigeon {
+    } else if let value = value as? NdefStatusPigeon {
       super.writeByte(144)
       super.writeValue(value.rawValue)
-    } else if let value = value as? ErrorSourcePigeon {
+    } else if let value = value as? Iso15693RequestFlagPigeon {
       super.writeByte(145)
       super.writeValue(value.rawValue)
-    } else if let value = value as? SessionKindPigeon {
+    } else if let value = value as? FeliCaPollingRequestCodePigeon {
       super.writeByte(146)
       super.writeValue(value.rawValue)
-    } else if let value = value as? AndroidErrorCodePigeon {
+    } else if let value = value as? FeliCaPollingTimeSlotPigeon {
       super.writeByte(147)
       super.writeValue(value.rawValue)
-    } else if let value = value as? ReaderErrorCodePigeon {
+    } else if let value = value as? VasModePigeon {
       super.writeByte(148)
       super.writeValue(value.rawValue)
-    } else if let value = value as? NdefRecordPigeon {
+    } else if let value = value as? VasResponseErrorCodePigeon {
       super.writeByte(149)
-      super.writeValue(value.toList())
-    } else if let value = value as? NdefMessagePigeon {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? ErrorSourcePigeon {
       super.writeByte(150)
-      super.writeValue(value.toList())
-    } else if let value = value as? SessionConfigPigeon {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? SessionKindPigeon {
       super.writeByte(151)
-      super.writeValue(value.toList())
-    } else if let value = value as? NfcAPigeon {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? AndroidErrorCodePigeon {
       super.writeByte(152)
-      super.writeValue(value.toList())
-    } else if let value = value as? NfcBPigeon {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? ReaderErrorCodePigeon {
       super.writeByte(153)
-      super.writeValue(value.toList())
-    } else if let value = value as? NfcFPigeon {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? NdefRecordPigeon {
       super.writeByte(154)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcVPigeon {
+    } else if let value = value as? NdefMessagePigeon {
       super.writeByte(155)
       super.writeValue(value.toList())
-    } else if let value = value as? IsoDepPigeon {
+    } else if let value = value as? SessionConfigPigeon {
       super.writeByte(156)
       super.writeValue(value.toList())
-    } else if let value = value as? MifareClassicPigeon {
+    } else if let value = value as? PollingFramePigeon {
       super.writeByte(157)
       super.writeValue(value.toList())
-    } else if let value = value as? MifareUltralightPigeon {
+    } else if let value = value as? AvailableNfcAntennaPigeon {
       super.writeByte(158)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcBarcodePigeon {
+    } else if let value = value as? NfcAntennaInfoPigeon {
       super.writeByte(159)
       super.writeValue(value.toList())
-    } else if let value = value as? NdefAndroidPigeon {
+    } else if let value = value as? NfcEventPigeon {
       super.writeByte(160)
       super.writeValue(value.toList())
-    } else if let value = value as? NdefIosPigeon {
+    } else if let value = value as? TagIntentSetupPigeon {
       super.writeByte(161)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaPigeon {
+    } else if let value = value as? NfcAPigeon {
       super.writeByte(162)
       super.writeValue(value.toList())
-    } else if let value = value as? Iso7816Pigeon {
+    } else if let value = value as? NfcBPigeon {
       super.writeByte(163)
       super.writeValue(value.toList())
-    } else if let value = value as? Iso15693Pigeon {
+    } else if let value = value as? NfcFPigeon {
       super.writeByte(164)
       super.writeValue(value.toList())
-    } else if let value = value as? MiFarePigeon {
+    } else if let value = value as? NfcVPigeon {
       super.writeByte(165)
       super.writeValue(value.toList())
-    } else if let value = value as? TagPigeon {
+    } else if let value = value as? IsoDepPigeon {
       super.writeByte(166)
       super.writeValue(value.toList())
-    } else if let value = value as? Iso7816ResponseApduPigeon {
+    } else if let value = value as? MifareClassicPigeon {
       super.writeByte(167)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaPollingResponsePigeon {
+    } else if let value = value as? MifareUltralightPigeon {
       super.writeByte(168)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaStatusFlagPigeon {
+    } else if let value = value as? NfcBarcodePigeon {
       super.writeByte(169)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaReadWithoutEncryptionResponsePigeon {
+    } else if let value = value as? NdefAndroidPigeon {
       super.writeByte(170)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaRequestServiceV2ResponsePigeon {
+    } else if let value = value as? NdefIosPigeon {
       super.writeByte(171)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaRequestSpecificationVersionResponsePigeon {
+    } else if let value = value as? FeliCaPigeon {
       super.writeByte(172)
       super.writeValue(value.toList())
-    } else if let value = value as? Iso15693SystemInfoPigeon {
+    } else if let value = value as? Iso7816Pigeon {
       super.writeByte(173)
       super.writeValue(value.toList())
-    } else if let value = value as? QueryNdefStatusResponsePigeon {
+    } else if let value = value as? Iso15693Pigeon {
       super.writeByte(174)
       super.writeValue(value.toList())
-    } else if let value = value as? VasCommandConfigurationPigeon {
+    } else if let value = value as? MiFarePigeon {
       super.writeByte(175)
       super.writeValue(value.toList())
-    } else if let value = value as? VasResponsePigeon {
+    } else if let value = value as? TagPigeon {
       super.writeByte(176)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcErrorPigeon {
+    } else if let value = value as? Iso7816ResponseApduPigeon {
       super.writeByte(177)
+      super.writeValue(value.toList())
+    } else if let value = value as? FeliCaPollingResponsePigeon {
+      super.writeByte(178)
+      super.writeValue(value.toList())
+    } else if let value = value as? FeliCaStatusFlagPigeon {
+      super.writeByte(179)
+      super.writeValue(value.toList())
+    } else if let value = value as? FeliCaReadWithoutEncryptionResponsePigeon {
+      super.writeByte(180)
+      super.writeValue(value.toList())
+    } else if let value = value as? FeliCaRequestServiceV2ResponsePigeon {
+      super.writeByte(181)
+      super.writeValue(value.toList())
+    } else if let value = value as? FeliCaRequestSpecificationVersionResponsePigeon {
+      super.writeByte(182)
+      super.writeValue(value.toList())
+    } else if let value = value as? Iso15693SystemInfoPigeon {
+      super.writeByte(183)
+      super.writeValue(value.toList())
+    } else if let value = value as? QueryNdefStatusResponsePigeon {
+      super.writeByte(184)
+      super.writeValue(value.toList())
+    } else if let value = value as? VasCommandConfigurationPigeon {
+      super.writeByte(185)
+      super.writeValue(value.toList())
+    } else if let value = value as? VasResponsePigeon {
+      super.writeByte(186)
+      super.writeValue(value.toList())
+    } else if let value = value as? NfcErrorPigeon {
+      super.writeByte(187)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -2379,6 +2800,22 @@ protocol NfcAndroidHostApi {
   func disableForegroundDispatch() throws
   /// The tag whose intent launched the app, if any. Consumed by the first call.
   func takeInitialTag() throws -> TagPigeon?
+  /// Restricts what the controller polls for and answers as, for as long as the activity is
+  /// in the foreground. API 35 and above.
+  func setDiscoveryTechnology(poll: [PollTechPigeon], listen: [ListenTechPigeon], completion: @escaping (Result<Void, Error>) -> Void)
+  func resetDiscoveryTechnology(completion: @escaping (Result<Void, Error>) -> Void)
+  /// Where the antennas are, so an app can say where to hold the tag. API 34 and above;
+  /// null below, and on a device that publishes no geometry.
+  func getAntennaInfo() throws -> NfcAntennaInfoPigeon?
+  /// Whether the device implements the Android 16 tag-scan allowlist.
+  func isTagIntentAppPreferenceSupported() throws -> Bool
+  /// Whether the user has allowed this app to be launched by a tag. True below API 36.
+  func isTagIntentAllowed() throws -> Bool
+  /// Opens the system screen where the user changes that. False when there is no activity
+  /// to start it from, or the device has no such screen.
+  func openTagIntentPreferenceSettings() throws -> Bool
+  /// Everything that decides whether a tag *intent* can reach this app, in one call.
+  func checkTagIntentSetup() throws -> TagIntentSetupPigeon
   func transceive(handle: String, tech: AndroidTechPigeon, data: FlutterStandardTypedData, completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void)
   func getMaxTransceiveLength(handle: String, tech: AndroidTechPigeon, completion: @escaping (Result<Int64, Error>) -> Void)
   func getTimeout(handle: String, tech: AndroidTechPigeon, completion: @escaping (Result<Int64, Error>) -> Void)
@@ -2409,6 +2846,27 @@ protocol NfcAndroidHostApi {
   /// Makes this app the preferred handler while it is in the foreground, so a tap reaches
   /// it rather than the user's default wallet.
   func hceSetPreferredService(preferred: Bool) throws
+  func hceIsObserveModeSupported() throws -> Bool
+  func hceIsObserveModeEnabled() throws -> Bool
+  /// Stops the device answering readers and starts delivering their polling frames instead.
+  /// Only the preferred service may change this, so pair it with [hceSetPreferredService].
+  func hceSetObserveModeEnabled(enabled: Bool, completion: @escaping (Result<Bool, Error>) -> Void)
+  /// Whether the service should come up in observe mode whenever it becomes preferred,
+  /// rather than needing [hceSetObserveModeEnabled] each time.
+  func hceSetDefaultToObserveMode(shouldDefault: Bool, completion: @escaping (Result<Bool, Error>) -> Void)
+  /// Delivers polling frames whose bytes are exactly [filter], as uppercase hex.
+  ///
+  /// With [autoTransact] the platform leaves observe mode by itself on a match, so the
+  /// exchange that follows is answered rather than merely watched.
+  func hceRegisterPollingLoopFilter(filter: String, autoTransact: Bool, completion: @escaping (Result<Bool, Error>) -> Void)
+  /// As [hceRegisterPollingLoopFilter], but [pattern] is a regular expression matched
+  /// against the frame's hex.
+  func hceRegisterPollingLoopPatternFilter(pattern: String, autoTransact: Bool, completion: @escaping (Result<Bool, Error>) -> Void)
+  func hceRemovePollingLoopFilter(filter: String, completion: @escaping (Result<Bool, Error>) -> Void)
+  func hceRemovePollingLoopPatternFilter(pattern: String, completion: @escaping (Result<Bool, Error>) -> Void)
+  /// Starts delivering `onNfcEvent`. False on a device below API 36.
+  func enableNfcEvents(completion: @escaping (Result<Bool, Error>) -> Void)
+  func disableNfcEvents(completion: @escaping (Result<Void, Error>) -> Void)
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -2532,6 +2990,113 @@ class NfcAndroidHostApiSetup {
       }
     } else {
       takeInitialTagChannel.setMessageHandler(nil)
+    }
+    /// Restricts what the controller polls for and answers as, for as long as the activity is
+    /// in the foreground. API 35 and above.
+    let setDiscoveryTechnologyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.setDiscoveryTechnology\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setDiscoveryTechnologyChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let pollArg = args[0] as! [PollTechPigeon]
+        let listenArg = args[1] as! [ListenTechPigeon]
+        api.setDiscoveryTechnology(poll: pollArg, listen: listenArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setDiscoveryTechnologyChannel.setMessageHandler(nil)
+    }
+    let resetDiscoveryTechnologyChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.resetDiscoveryTechnology\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      resetDiscoveryTechnologyChannel.setMessageHandler { _, reply in
+        api.resetDiscoveryTechnology { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      resetDiscoveryTechnologyChannel.setMessageHandler(nil)
+    }
+    /// Where the antennas are, so an app can say where to hold the tag. API 34 and above;
+    /// null below, and on a device that publishes no geometry.
+    let getAntennaInfoChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.getAntennaInfo\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getAntennaInfoChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.getAntennaInfo()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      getAntennaInfoChannel.setMessageHandler(nil)
+    }
+    /// Whether the device implements the Android 16 tag-scan allowlist.
+    let isTagIntentAppPreferenceSupportedChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isTagIntentAppPreferenceSupported\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      isTagIntentAppPreferenceSupportedChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.isTagIntentAppPreferenceSupported()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      isTagIntentAppPreferenceSupportedChannel.setMessageHandler(nil)
+    }
+    /// Whether the user has allowed this app to be launched by a tag. True below API 36.
+    let isTagIntentAllowedChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isTagIntentAllowed\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      isTagIntentAllowedChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.isTagIntentAllowed()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      isTagIntentAllowedChannel.setMessageHandler(nil)
+    }
+    /// Opens the system screen where the user changes that. False when there is no activity
+    /// to start it from, or the device has no such screen.
+    let openTagIntentPreferenceSettingsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.openTagIntentPreferenceSettings\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      openTagIntentPreferenceSettingsChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.openTagIntentPreferenceSettings()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      openTagIntentPreferenceSettingsChannel.setMessageHandler(nil)
+    }
+    /// Everything that decides whether a tag *intent* can reach this app, in one call.
+    let checkTagIntentSetupChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.checkTagIntentSetup\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      checkTagIntentSetupChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.checkTagIntentSetup()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      checkTagIntentSetupChannel.setMessageHandler(nil)
     }
     let transceiveChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.transceive\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
@@ -2924,6 +3489,177 @@ class NfcAndroidHostApiSetup {
       }
     } else {
       hceSetPreferredServiceChannel.setMessageHandler(nil)
+    }
+    let hceIsObserveModeSupportedChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsObserveModeSupported\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceIsObserveModeSupportedChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.hceIsObserveModeSupported()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      hceIsObserveModeSupportedChannel.setMessageHandler(nil)
+    }
+    let hceIsObserveModeEnabledChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsObserveModeEnabled\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceIsObserveModeEnabledChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.hceIsObserveModeEnabled()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      hceIsObserveModeEnabledChannel.setMessageHandler(nil)
+    }
+    /// Stops the device answering readers and starts delivering their polling frames instead.
+    /// Only the preferred service may change this, so pair it with [hceSetPreferredService].
+    let hceSetObserveModeEnabledChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSetObserveModeEnabled\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceSetObserveModeEnabledChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let enabledArg = args[0] as! Bool
+        api.hceSetObserveModeEnabled(enabled: enabledArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      hceSetObserveModeEnabledChannel.setMessageHandler(nil)
+    }
+    /// Whether the service should come up in observe mode whenever it becomes preferred,
+    /// rather than needing [hceSetObserveModeEnabled] each time.
+    let hceSetDefaultToObserveModeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSetDefaultToObserveMode\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceSetDefaultToObserveModeChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let shouldDefaultArg = args[0] as! Bool
+        api.hceSetDefaultToObserveMode(shouldDefault: shouldDefaultArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      hceSetDefaultToObserveModeChannel.setMessageHandler(nil)
+    }
+    /// Delivers polling frames whose bytes are exactly [filter], as uppercase hex.
+    ///
+    /// With [autoTransact] the platform leaves observe mode by itself on a match, so the
+    /// exchange that follows is answered rather than merely watched.
+    let hceRegisterPollingLoopFilterChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRegisterPollingLoopFilter\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceRegisterPollingLoopFilterChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let filterArg = args[0] as! String
+        let autoTransactArg = args[1] as! Bool
+        api.hceRegisterPollingLoopFilter(filter: filterArg, autoTransact: autoTransactArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      hceRegisterPollingLoopFilterChannel.setMessageHandler(nil)
+    }
+    /// As [hceRegisterPollingLoopFilter], but [pattern] is a regular expression matched
+    /// against the frame's hex.
+    let hceRegisterPollingLoopPatternFilterChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRegisterPollingLoopPatternFilter\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceRegisterPollingLoopPatternFilterChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let patternArg = args[0] as! String
+        let autoTransactArg = args[1] as! Bool
+        api.hceRegisterPollingLoopPatternFilter(pattern: patternArg, autoTransact: autoTransactArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      hceRegisterPollingLoopPatternFilterChannel.setMessageHandler(nil)
+    }
+    let hceRemovePollingLoopFilterChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRemovePollingLoopFilter\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceRemovePollingLoopFilterChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let filterArg = args[0] as! String
+        api.hceRemovePollingLoopFilter(filter: filterArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      hceRemovePollingLoopFilterChannel.setMessageHandler(nil)
+    }
+    let hceRemovePollingLoopPatternFilterChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceRemovePollingLoopPatternFilter\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceRemovePollingLoopPatternFilterChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let patternArg = args[0] as! String
+        api.hceRemovePollingLoopPatternFilter(pattern: patternArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      hceRemovePollingLoopPatternFilterChannel.setMessageHandler(nil)
+    }
+    /// Starts delivering `onNfcEvent`. False on a device below API 36.
+    let enableNfcEventsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.enableNfcEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      enableNfcEventsChannel.setMessageHandler { _, reply in
+        api.enableNfcEvents { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      enableNfcEventsChannel.setMessageHandler(nil)
+    }
+    let disableNfcEventsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.disableNfcEvents\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      disableNfcEventsChannel.setMessageHandler { _, reply in
+        api.disableNfcEvents { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      disableNfcEventsChannel.setMessageHandler(nil)
     }
   }
 }
@@ -3796,6 +4532,12 @@ protocol NfcFlutterApiProtocol {
   func onApduReceived(apdu apduArg: FlutterStandardTypedData, completion: @escaping (Result<Void, PigeonError>) -> Void)
   /// Android only. `HostApduService.onDeactivated` reason.
   func onHceDeactivated(reason reasonArg: Int64, completion: @escaping (Result<Void, PigeonError>) -> Void)
+  /// Android only. Frames from a reader's polling loop, while observe mode is on.
+  ///
+  /// Batched by the platform: one call can carry a whole loop.
+  func onPollingFrames(frames framesArg: [PollingFramePigeon], completion: @escaping (Result<Void, PigeonError>) -> Void)
+  /// Android only. A card-emulation event, once `enableNfcEvents` has been called.
+  func onNfcEvent(event eventArg: NfcEventPigeon, completion: @escaping (Result<Void, PigeonError>) -> Void)
   /// Android only. A tag delivered by an intent filter rather than a reader session.
   func onTagFromIntent(tag tagArg: TagPigeon, completion: @escaping (Result<Void, PigeonError>) -> Void)
   /// iOS only. An NDEF message from background tag reading.
@@ -3935,6 +4677,46 @@ class NfcFlutterApi: NfcFlutterApiProtocol {
     let channelName: String = "dev.flutter.pigeon.nfc_util.NfcFlutterApi.onHceDeactivated\(messageChannelSuffix)"
     let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
     channel.sendMessage([reasonArg] as [Any?]) { response in
+      guard let listResponse = response as? [Any?] else {
+        completion(.failure(createConnectionError(withChannelName: channelName)))
+        return
+      }
+      if listResponse.count > 1 {
+        let code: String = listResponse[0] as! String
+        let message: String? = nilOrValue(listResponse[1])
+        let details: String? = nilOrValue(listResponse[2])
+        completion(.failure(PigeonError(code: code, message: message, details: details)))
+      } else {
+        completion(.success(()))
+      }
+    }
+  }
+  /// Android only. Frames from a reader's polling loop, while observe mode is on.
+  ///
+  /// Batched by the platform: one call can carry a whole loop.
+  func onPollingFrames(frames framesArg: [PollingFramePigeon], completion: @escaping (Result<Void, PigeonError>) -> Void) {
+    let channelName: String = "dev.flutter.pigeon.nfc_util.NfcFlutterApi.onPollingFrames\(messageChannelSuffix)"
+    let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
+    channel.sendMessage([framesArg] as [Any?]) { response in
+      guard let listResponse = response as? [Any?] else {
+        completion(.failure(createConnectionError(withChannelName: channelName)))
+        return
+      }
+      if listResponse.count > 1 {
+        let code: String = listResponse[0] as! String
+        let message: String? = nilOrValue(listResponse[1])
+        let details: String? = nilOrValue(listResponse[2])
+        completion(.failure(PigeonError(code: code, message: message, details: details)))
+      } else {
+        completion(.success(()))
+      }
+    }
+  }
+  /// Android only. A card-emulation event, once `enableNfcEvents` has been called.
+  func onNfcEvent(event eventArg: NfcEventPigeon, completion: @escaping (Result<Void, PigeonError>) -> Void) {
+    let channelName: String = "dev.flutter.pigeon.nfc_util.NfcFlutterApi.onNfcEvent\(messageChannelSuffix)"
+    let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
+    channel.sendMessage([eventArg] as [Any?]) { response in
       guard let listResponse = response as? [Any?] else {
         completion(.failure(createConnectionError(withChannelName: channelName)))
         return
