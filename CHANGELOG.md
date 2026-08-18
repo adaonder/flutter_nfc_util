@@ -1,3 +1,32 @@
+## 3.1.2
+
+Documentation only. The plugin, the example app and the tests are byte for byte what 3.1.1
+shipped, so **there is nothing here to upgrade for** unless you are reading the README.
+
+* **The README now opens with a step-by-step Quick start.** *(Docs -- anyone setting the
+  package up for the first time.)* Six numbered steps take an empty project to a tag read on
+  a real phone: add the package, do nothing on Android, do three things on iOS, paste one
+  complete `main.dart`, run it on hardware, and know what each platform looks like when it
+  works. The Dart in step 4 is a whole file rather than a fragment -- imports, widget,
+  availability check, session, cleanup -- and it was compiled, analyzed and formatted
+  against this version before being embedded, rather than written into the README by
+  hand.
+
+* **`Setup` is split into what everyone needs and what almost nobody does.** *(Docs.)* It is
+  now `Setup in detail`, with the reader-only minimum first and the background-tag intent
+  filters, the card emulation description, the ISO 7816 identifiers and the VAS format each
+  behind a plain statement of when they apply. Previously all of them sat in one list, and
+  an app that only wanted to read a tag could not tell which four of the five iOS items it
+  could skip.
+
+* **A troubleshooting table, and a table of contents.** *(Docs.)* The table is written from
+  the symptom rather than the cause, starting with the iOS reader sheet that never appears
+  because the FeliCa system codes are missing -- previously a sentence buried in prose, and
+  the mistake people hit first.
+
+Also corrected: the host card emulation section said a background engine "is not in 3.0.0",
+which told a reader on 3.1.x nothing about their own version.
+
 ## 3.1.1
 
 The plugin itself is byte for byte what 3.1.0 shipped. Everything here is the example app

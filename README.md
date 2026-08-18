@@ -16,6 +16,29 @@ await NfcUtil.instance.startSession(
 );
 ```
 
+## Contents
+
+New here? Everything you need for a first tag read is in [Quick start](#quick-start).
+
+* [What it does](#what-it-does)
+* [Install](#install)
+* [Quick start](#quick-start)
+* [Setup in detail](#setup-in-detail)
+  * [The minimum, for reading tags](#the-minimum-for-reading-tags)
+  * [Only if you need it](#only-if-you-need-it)
+  * [Troubleshooting](#troubleshooting)
+* [The four libraries](#the-four-libraries)
+* [Sessions](#sessions)
+* [NDEF](#ndef)
+* [Tag technologies](#tag-technologies)
+* [Background tag reading](#background-tag-reading)
+* [Host card emulation](#host-card-emulation)
+* [Apple Wallet passes](#apple-wallet-passes)
+* [Errors](#errors)
+* [Testing](#testing)
+* [Upgrading from 2.2.0](#upgrading-from-220)
+* [License](#license)
+
 ## What it does
 
 | | Android | iOS |
@@ -41,21 +64,195 @@ await NfcUtil.instance.startSession(
 
 ```yaml
 dependencies:
-  nfc_util: ^3.1.1
+  nfc_util: ^3.1.2
 ```
 
 Requires Flutter 3.44, Android API 24, iOS 15.6.
 
-## Setup
+## Quick start
 
-### Android
+Six steps from an empty project to a tag read on a real phone. Nothing else in this README is
+needed to get that far.
 
-The plugin declares `android.permission.NFC` and its card emulation service itself, so a
-reader-only app needs nothing. Two features need app-side declarations:
+### 1. Add the package
 
-**Background tag reading** — the intent filters name *your* activity, so only your manifest
-can declare them. Add to the launcher activity, which must be `android:launchMode="singleTop"`
-or a tap starts a second copy instead of delivering to the running one:
+```bash
+flutter pub add nfc_util
+```
+
+Then check your project clears the floor: **Flutter 3.44**, **Android API 24** (`minSdk` in
+`android/app/build.gradle.kts`), **iOS 15.6** (`IPHONEOS_DEPLOYMENT_TARGET` in Xcode).
+
+### 2. Android: nothing to do
+
+The plugin declares `android.permission.NFC` for you, so an app that only reads tags needs no
+manifest change at all. **Skip to step 4.**
+
+Android needs manifest entries only for letting a tag *launch* your app while it is closed,
+which is a later concern — see [Setup in detail](#setup-in-detail).
+
+### 3. iOS: three things
+
+**a.** In Xcode, open `ios/Runner.xcworkspace` → select the **Runner** target → **Signing &
+Capabilities** → **+ Capability** → add **Near Field Communication Tag Reading**.
+
+**b.** Open `ios/Runner/Info.plist` and add both keys below. The first is the sentence iOS
+shows the user when the reader opens; the second is the one people forget:
+
+```xml
+<key>NFCReaderUsageDescription</key>
+<string>This app uses NFC to read tags.</string>
+
+<key>com.apple.developer.nfc.readersession.felica.systemcodes</key>
+<array>
+    <string>12FC</string>
+    <string>8008</string>
+    <string>0003</string>
+    <string>FE00</string>
+</array>
+```
+
+**c.** Know why **b** matters. `startSession` polls for every tag type by default, FeliCa
+included, and CoreNFC refuses a FeliCa poll unless those system codes are listed. Without the
+key **no reader sheet appears, no exception is thrown, and it looks like your code did
+nothing**. If you would rather not poll FeliCa at all, leave the key out and pass
+`pollingOptions: {NfcPollingOption.iso14443}` to `startSession` instead. This is the single
+most common iOS mistake with this package.
+
+### 4. Write your first screen
+
+Replace `lib/main.dart` with this. It runs as it stands: press the button, hold a tag to the
+phone, read its text.
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:nfc_util/ndef.dart';
+import 'package:nfc_util/nfc_util.dart';
+
+void main() => runApp(const MyApp());
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) => const MaterialApp(home: TagReaderPage());
+}
+
+class TagReaderPage extends StatefulWidget {
+  const TagReaderPage({super.key});
+
+  @override
+  State<TagReaderPage> createState() => _TagReaderPageState();
+}
+
+class _TagReaderPageState extends State<TagReaderPage> {
+  String _status = 'Press the button, then hold a tag against your phone.';
+
+  void _show(String message) {
+    if (mounted) setState(() => _status = message);
+  }
+
+  Future<void> _readTag() async {
+    // 1. Can we use NFC right now? This never throws, so it is safe as a gate.
+    final availability = await NfcUtil.instance.checkAvailability();
+    if (availability != NfcAvailability.enabled) {
+      _show(availability == NfcAvailability.disabled ? 'NFC is switched off in Settings.' : 'This phone has no NFC.');
+      return;
+    }
+
+    // 2. Start reading. On iOS this is what opens the system reader sheet.
+    await NfcUtil.instance.startSession(
+      alertMessageIos: 'Hold your phone near the tag',
+      onDiscovered: (tag) async {
+        // 3. A tag arrived. Read its NDEF message and pull out the text records.
+        final message = await Ndef.from(tag)?.read();
+        final texts = <String>[];
+        for (final record in message?.records ?? const <NdefRecord>[]) {
+          final text = TextRecord.from(record);
+          if (text != null) texts.add(text.text);
+        }
+        _show(texts.isEmpty ? 'Tag read, but it holds no text.' : texts.join('\n'));
+
+        // 4. Done with this tag: close the session.
+        await NfcUtil.instance.stopSession(alertMessageIos: 'Done');
+      },
+      onError: (error) async => _show(error.message),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Read an NFC tag')),
+    body: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(_status, textAlign: TextAlign.center),
+          const SizedBox(height: 24),
+          FilledButton(onPressed: _readTag, child: const Text('Read a tag')),
+        ],
+      ),
+    ),
+  );
+}
+```
+
+### 5. Run it on a real phone
+
+```bash
+flutter run
+```
+
+**It has to be a physical phone.** No Android emulator and no iOS Simulator has an NFC radio,
+so there the button only reports that the device has no NFC. For a test tag, any cheap
+**NTAG213** sticker works — write some text onto it with any NFC writer app first, so there is
+something to read.
+
+### 6. What you should see
+
+The two platforms feel different, which is normal and not a bug:
+
+| | Android | iOS |
+|---|---|---|
+| After pressing the button | nothing visible — the phone is already listening | the system reader sheet slides up, showing your `alertMessageIos` text |
+| When the tag touches | the system tag sound, then the text on screen | the sheet reports "Done" and dismisses itself, then the text |
+| If no tag ever arrives | the session stays open until you stop it | iOS closes the session on its own and `onError` fires |
+
+That is the whole loop. From here:
+
+* reading or writing more than plain text → [NDEF](#ndef)
+* Mifare, FeliCa, ISO 15693, ISO 7816 → [Tag technologies](#tag-technologies)
+* launching your app by tapping a tag → [Background tag reading](#background-tag-reading)
+* something not working → [Troubleshooting](#troubleshooting)
+* every feature at once, one button each → the demo app in [`example/`](example/)
+
+## Setup in detail
+
+Everything the two platforms can ask for. The first subsection is what Quick start already
+did; the rest you add only when you use the feature that needs it.
+
+### The minimum, for reading tags
+
+**Android** — nothing. The plugin declares `android.permission.NFC` and its card emulation
+service itself, so a reader-only app needs no manifest change.
+
+**iOS** — three things, all of them [Quick start step 3](#3-ios-three-things):
+
+1. The **Near Field Communication Tag Reading** capability in Xcode.
+2. `NFCReaderUsageDescription` in `Info.plist`.
+3. `com.apple.developer.nfc.readersession.felica.systemcodes` in `Info.plist`. Polling
+   `iso18092` — which `startSession` does by default — makes CoreNFC demand it. **Without it
+   the reader sheet simply never appears**, `startSession` still returns normally, and the
+   failure arrives asynchronously. Either add the key or drop `iso18092` from
+   `pollingOptions`.
+
+### Only if you need it
+
+**Background tag reading (Android)** — only if a tag should launch your app while it is
+closed. The intent filters name *your* activity, so only your manifest can declare them. Add
+to the launcher activity, which must be `android:launchMode="singleTop"` or a tap starts a
+second copy instead of delivering to the running one:
 
 ```xml
 <intent-filter>
@@ -75,32 +272,39 @@ with `res/xml/nfc_tech_filter.xml` listing the technologies you handle — see
 [the example](example/android/app/src/main/res/xml/nfc_tech_filter.xml). Trim it: every
 technology you list makes your app an option on every matching tap.
 
-**Card emulation description** — the string shown in the system's "Tap and pay" settings
-defaults to "NFC card emulation". Override it by declaring `nfc_util_hce_description` in
-your own `strings.xml`.
+**Card emulation description (Android)** — only if you use host card emulation. The string
+shown in the system's "Tap and pay" settings defaults to "NFC card emulation". Override it by
+declaring `nfc_util_hce_description` in your own `strings.xml`.
 
-### iOS
+**ISO 7816 tags (iOS)** — only if you send APDUs to a smart card. Those tags additionally need
+`com.apple.developer.nfc.readersession.iso7816.select-identifiers` in `Info.plist`, listing
+the AIDs you select.
 
-1. Turn on the **Near Field Communication Tag Reading** capability in Xcode.
-2. `Info.plist` needs `NFCReaderUsageDescription`.
-3. Polling `iso18092` — which `startSession` does by default — makes CoreNFC demand
-   `com.apple.developer.nfc.readersession.felica.systemcodes` in `Info.plist`. **Without
-   it the reader sheet simply never appears**, `startSession` still returns normally, and
-   the failure arrives asynchronously. Either add the key or drop `iso18092` from
-   `pollingOptions`. This is the single most common iOS setup mistake.
-4. ISO 7816 tags additionally need
-   `com.apple.developer.nfc.readersession.iso7816.select-identifiers`.
-5. Wallet passes need `VAS` in `com.apple.developer.nfc.readersession.formats`. This is
-   **not** part of the Xcode capability, which grants only `NDEF` and `TAG`: the App ID has
-   to be provisioned for VAS separately, and adding the value to a profile that does not
-   carry it fails the **build**, not the session —
-   *"Provisioning profile ... doesn't match the entitlements file's value for the
-   com.apple.developer.nfc.readersession.formats entitlement"*. The example app therefore
-   ships without it, so it builds on any team; add it once your own App ID is provisioned.
+**Apple Wallet passes (iOS)** — only if you read Wallet passes. They need `VAS` in
+`com.apple.developer.nfc.readersession.formats`. This is **not** part of the Xcode capability,
+which grants only `NDEF` and `TAG`: the App ID has to be provisioned for VAS separately, and
+adding the value to a profile that does not carry it fails the **build**, not the session —
+*"Provisioning profile ... doesn't match the entitlements file's value for the
+com.apple.developer.nfc.readersession.formats entitlement"*. The example app therefore ships
+without it, so it builds on any team; add it once your own App ID is provisioned.
+
+### Troubleshooting
+
+| What you see | Why, and what to do |
+|---|---|
+| **iOS: no reader sheet, and no error either.** The call returns and nothing happens. | The FeliCa system codes are missing from `Info.plist` — [step 3](#3-ios-three-things). |
+| `The getter 'instance' isn't defined for the type 'NfcUtil'` | A class of your own named `NfcUtil` shadows the package's. Import it under a prefix — [The four libraries](#the-four-libraries). |
+| `PlatformException(session_already_exists)` | A session is still running. Call `stopSession()` first, and after an error restart only when `error.sessionEnded` is true — [Errors](#errors). |
+| No tag is ever detected | An emulator or the Simulator (neither has a radio), or NFC is switched off. `checkAvailability()` tells the two apart. |
+| **Android: the tap opens a different app** | Another app claims the tag first. Call `enableForegroundDispatch()` while your screen is up — [Background tag reading](#background-tag-reading). |
+| A write appears to do nothing | Check `ndef.isWritable`, and `message.byteLength <= ndef.maxSize`, before writing — [NDEF](#ndef). |
+| **iOS: the session ends by itself** | Expected. CoreNFC closes an idle session and reports it through `onError`. |
 
 ## The four libraries
 
-Portability is told by the import path rather than by a suffix on every class name.
+Which platforms a class works on is told by the import path, not by a suffix on the class
+name. `nfc_util.dart` and `ndef.dart` work everywhere; `android.dart` and `ios.dart` work only
+on the platform they name.
 
 ```dart
 import 'package:nfc_util/nfc_util.dart';          // NfcUtil, NfcTag, NfcError
@@ -109,8 +313,8 @@ import 'package:nfc_util/android.dart' as android; // android.nfc
 import 'package:nfc_util/ios.dart' as ios;         // CoreNFC
 ```
 
-Nothing is hidden behind the cross-platform façade: `NfcUtil` is a thin adapter, and
-`NfcUtilAndroid` / `NfcUtilIos` are always reachable for what it does not express.
+`NfcUtil` is a thin adapter, and it hides nothing: anything it does not cover is reachable
+directly on `NfcUtilAndroid` or `NfcUtilIos`.
 
 **If your app has its own `NfcUtil`** — a wrapper named after the thing it wraps is the
 obvious name on both sides of the import — the result is not a conflict but a shadow: the
@@ -256,7 +460,7 @@ claim the same identifier, and the second registration is refused.
 
 **This release bridges APDUs only while the Flutter engine is alive.** A tap with the app
 fully stopped is answered with `6D00` rather than queued. Emulating a card while the app is
-closed needs a background engine, which is not in 3.0.0.
+closed needs a background engine, which this release does not have.
 
 ## Apple Wallet passes
 
