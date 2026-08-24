@@ -13,7 +13,8 @@
 /// ```
 library;
 
-export 'src/android/hce.dart' show HostCardEmulation, PollingFrame, PollingFrameType;
+export 'src/android/hce.dart'
+    show AidSelectionMode, CardEmulationCategory, HostCardEmulation, PollingFrame, PollingFrameType;
 export 'src/android/platform.dart'
     show
         NfcAntennaInfo,

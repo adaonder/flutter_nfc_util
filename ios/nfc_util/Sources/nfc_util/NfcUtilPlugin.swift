@@ -260,6 +260,14 @@ extension NfcUtilPlugin: NfcIosHostApi {
     NFCTagReaderSession.readingAvailable
   }
 
+  func tagIsAvailable(handle: String) throws -> Bool {
+    // A handle the session has already let go of answers false rather than raising: "that
+    // tag is gone" is exactly what the caller asked, and is the same answer CoreNFC gives
+    // for a tag that has left the field. `__NFCTag` is the CoreNFC protocol every branch of
+    // the `NFCTag` enum conforms to; the underscores are Apple's, not this package's.
+    tag(handle, as: (any __NFCTag).self)?.isAvailable ?? false
+  }
+
   func tagSessionSetAlertMessage(alertMessage: String, completion: @escaping (Result<Void, Error>) -> Void) {
     guard let session = tagSession else {
       completion(Self.unavailable("No tag session is running."))
@@ -835,7 +843,10 @@ extension NfcUtilPlugin {
               blockSize: Int64(blockSize),
               dataStorageFormatIdentifier: Int64(dataStorageFormatIdentifier),
               icReference: Int64(icReference),
-              totalBlocks: Int64(totalBlocks)
+              totalBlocks: Int64(totalBlocks),
+              // Always nil: the 0x2B selector this calls predates the one that returns a
+              // UID. `iso15693GetSystemInfoAndUid` is the call that fills it in.
+              uid: nil
             )))
           }
         }
@@ -858,6 +869,275 @@ extension NfcUtilPlugin {
       ) { data, error in
         Self.finish(data, error, completion) { FlutterStandardTypedData(bytes: $0) }
       }
+    }
+  }
+
+  // CoreNFC.apinotes marks every iOS 14 addition below `SwiftPrivate`, which is why they
+  // reach Swift with a leading double underscore -- the unprefixed spelling belongs to the
+  // async form. The completion-handler form is the one that fits the rest of this file.
+  // All of them are iOS 14 against a 15.6 deployment target, so none needs availability.
+
+  func iso15693SendRequest(
+    handle: String,
+    flags: Int64,
+    commandCode: Int64,
+    data: FlutterStandardTypedData?,
+    completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void
+  ) {
+    // The flag byte arrives raw rather than as the wire enum: this carries whatever the tag
+    // vendor's command wants in bit 8, which the six named request flags cannot express.
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__sendRequest(withFlag: Int(flags), commandCode: Int(commandCode), data: data?.data) {
+        responseFlag, response, error in
+        Self.iso15693Response(responseFlag, response, error, completion)
+      }
+    }
+  }
+
+  func iso15693FastReadMultipleBlocks(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    blockNumber: Int64,
+    numberOfBlocks: Int64,
+    completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__fastReadMultipleBlocks(
+        with: TagMapper.requestFlags(flags),
+        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+      ) { blocks, error in
+        Self.finish(blocks, error, completion) { $0.map { FlutterStandardTypedData(bytes: $0) } }
+      }
+    }
+  }
+
+  func iso15693ExtendedFastReadMultipleBlocks(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    blockNumber: Int64,
+    numberOfBlocks: Int64,
+    completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__extendedFastReadMultipleBlocks(
+        with: TagMapper.requestFlags(flags),
+        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+      ) { blocks, error in
+        Self.finish(blocks, error, completion) { $0.map { FlutterStandardTypedData(bytes: $0) } }
+      }
+    }
+  }
+
+  func iso15693ExtendedWriteMultipleBlocks(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    blockNumber: Int64,
+    numberOfBlocks: Int64,
+    dataBlocks: [FlutterStandardTypedData],
+    completion: @escaping (Result<Void, Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__extendedWriteMultipleBlocks(
+        withRequestFlags: TagMapper.requestFlags(flags),
+        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks)),
+        dataBlocks: dataBlocks.map { $0.data }
+      ) { error in Self.finishVoid(error, completion) }
+    }
+  }
+
+  func iso15693ExtendedGetMultipleBlockSecurityStatus(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    blockNumber: Int64,
+    numberOfBlocks: Int64,
+    completion: @escaping (Result<[Int64], Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__extendedGetMultipleBlockSecurityStatus(
+        with: TagMapper.requestFlags(flags),
+        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+      ) { status, error in
+        Self.finish(status, error, completion) { $0.map { Int64(truncating: $0) } }
+      }
+    }
+  }
+
+  func iso15693Authenticate(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    cryptoSuiteIdentifier: Int64,
+    message: FlutterStandardTypedData,
+    completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__authenticate(
+        withRequestFlags: TagMapper.requestFlags(flags),
+        cryptoSuiteIdentifier: Int(cryptoSuiteIdentifier),
+        message: message.data
+      ) { responseFlag, response, error in
+        Self.iso15693Response(responseFlag, response, error, completion)
+      }
+    }
+  }
+
+  func iso15693KeyUpdate(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    keyIdentifier: Int64,
+    message: FlutterStandardTypedData,
+    completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__keyUpdate(
+        withRequestFlags: TagMapper.requestFlags(flags),
+        keyIdentifier: Int(keyIdentifier),
+        message: message.data
+      ) { responseFlag, response, error in
+        Self.iso15693Response(responseFlag, response, error, completion)
+      }
+    }
+  }
+
+  func iso15693Challenge(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    cryptoSuiteIdentifier: Int64,
+    message: FlutterStandardTypedData,
+    completion: @escaping (Result<Void, Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__challenge(
+        withRequestFlags: TagMapper.requestFlags(flags),
+        cryptoSuiteIdentifier: Int(cryptoSuiteIdentifier),
+        message: message.data
+      ) { error in Self.finishVoid(error, completion) }
+    }
+  }
+
+  func iso15693ReadBuffer(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__readBuffer(withRequestFlags: TagMapper.requestFlags(flags)) { responseFlag, data, error in
+        Self.iso15693Response(responseFlag, data, error, completion)
+      }
+    }
+  }
+
+  func iso15693GetSystemInfoAndUid(
+    handle: String,
+    flags: [Iso15693RequestFlagPigeon],
+    completion: @escaping (Result<Iso15693SystemInfoPigeon, Error>) -> Void
+  ) {
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.__getSystemInfoAndUID(with: TagMapper.requestFlags(flags)) {
+        uid, dataStorageFormatIdentifier, applicationFamilyIdentifier, blockSize, totalBlocks, icReference, error in
+        TagMapper.onMain {
+          if let error = error {
+            completion(.failure(TagMapper.flutterError(error)))
+          } else {
+            completion(.success(Iso15693SystemInfoPigeon(
+              applicationFamilyIdentifier: Int64(applicationFamilyIdentifier),
+              blockSize: Int64(blockSize),
+              dataStorageFormatIdentifier: Int64(dataStorageFormatIdentifier),
+              icReference: Int64(icReference),
+              totalBlocks: Int64(totalBlocks),
+              // Nil when the tag answered without one, which CoreNFC reports the same way it
+              // reports a missing block count: by leaving the value out rather than failing.
+              uid: uid.map { FlutterStandardTypedData(bytes: $0) }
+            )))
+          }
+        }
+      }
+    }
+  }
+
+  // Both configuration-taking commands are the pre-iOS 13 API, and CoreNFC answers them with
+  // `unsupportedFeature` unless the process carries the iso15693.tag-identifiers entitlement,
+  // which Apple no longer grants. They are here because the retry loop lives inside CoreNFC
+  // and cannot be rebuilt from Dart at the same cost; an app without the entitlement wants
+  // the plain commands above.
+
+  func iso15693ReadMultipleBlocksWithConfiguration(
+    handle: String,
+    blockNumber: Int64,
+    numberOfBlocks: Int64,
+    chunkSize: Int64,
+    configuration: Iso15693CommandConfigurationPigeon,
+    completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
+  ) {
+    let readConfiguration = NFCISO15693ReadMultipleBlocksConfiguration(
+      range: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks)),
+      chunkSize: Int(chunkSize),
+      maximumRetries: Int(configuration.maximumRetries),
+      retryInterval: configuration.retryIntervalSeconds
+    )
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.readMultipleBlock(readConfiguration: readConfiguration) { data, error in
+        Self.finish(data, error, completion) { Self.splitBlocks($0, into: Int(numberOfBlocks)) }
+      }
+    }
+  }
+
+  func iso15693CustomCommandWithConfiguration(
+    handle: String,
+    manufacturerCode: Int64,
+    customCommandCode: Int64,
+    customRequestParameters: FlutterStandardTypedData,
+    configuration: Iso15693CommandConfigurationPigeon,
+    completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void
+  ) {
+    let commandConfiguration = NFCISO15693CustomCommandConfiguration(
+      manufacturerCode: Int(manufacturerCode),
+      customCommandCode: Int(customCommandCode),
+      requestParameters: customRequestParameters.data,
+      maximumRetries: Int(configuration.maximumRetries),
+      retryInterval: configuration.retryIntervalSeconds
+    )
+    withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
+      tag.sendCustomCommand(commandConfiguration: commandConfiguration) { data, error in
+        Self.finish(data, error, completion) { FlutterStandardTypedData(bytes: $0) }
+      }
+    }
+  }
+
+  /// Completes one of the commands that answer with the response flag alongside their data.
+  ///
+  /// Only `sendRequest` can answer with no data at all, and the wire type has no way to say
+  /// that apart from "empty" -- nor any reason to, since a command that succeeded with
+  /// nothing to report is not a failure and the flag byte is the part worth reading.
+  private static func iso15693Response(
+    _ responseFlag: NFCISO15693ResponseFlag,
+    _ data: Data?,
+    _ error: Error?,
+    _ completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void
+  ) {
+    TagMapper.onMain {
+      if let error = error {
+        completion(.failure(TagMapper.flutterError(error)))
+      } else {
+        completion(.success(Iso15693ResponsePigeon(
+          flags: TagMapper.responseFlags(responseFlag),
+          data: FlutterStandardTypedData(bytes: data ?? Data())
+        )))
+      }
+    }
+  }
+
+  /// Cuts the concatenated answer of `readMultipleBlock` back into one element per block.
+  ///
+  /// It is the one read that hands back a single run of bytes instead of an array, so the
+  /// block size has to be recovered by division. A response that does not divide evenly is
+  /// handed back whole rather than sliced at a guessed boundary: a block cut in the wrong
+  /// place is worse than an uncut one, because it still looks like data.
+  private static func splitBlocks(_ data: Data, into count: Int) -> [FlutterStandardTypedData] {
+    guard count > 0, data.count % count == 0 else { return [FlutterStandardTypedData(bytes: data)] }
+    let bytes = [UInt8](data)
+    let blockSize = bytes.count / count
+    return stride(from: 0, to: bytes.count, by: blockSize).map {
+      FlutterStandardTypedData(bytes: Data(bytes[$0..<($0 + blockSize)]))
     }
   }
 }
@@ -1036,6 +1316,11 @@ extension NfcUtilPlugin: NFCTagReaderSessionDelegate {
       return
     }
 
+    // The rest of the field is still dropped -- a session addresses one tag at a time -- but
+    // the count travels with the tag now. Which of two cards CoreNFC hands over first is not
+    // deterministic, so an app that cares can ask the user to tap again with one.
+    let otherTagCount = tags.count - 1
+
     session.connect(to: tag) { [weak self] error in
       guard let self = self else { return }
 
@@ -1049,7 +1334,12 @@ extension NfcUtilPlugin: NFCTagReaderSessionDelegate {
       }
 
       let handle = UUID().uuidString
-      TagMapper.tagToWire(tag, handle: handle, skipNdef: self.skipNdefCheck) { wire in
+      TagMapper.tagToWire(
+        tag,
+        handle: handle,
+        otherTagCount: otherTagCount,
+        skipNdef: self.skipNdefCheck
+      ) { wire in
         TagMapper.onMain {
           // The NDEF probe is two round trips, and CoreNFC still runs a pending completion
           // after the session dies. Without this the plugin would register a tag in a map

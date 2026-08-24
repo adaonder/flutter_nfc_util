@@ -29,6 +29,11 @@ class _FakeAndroidHost extends NfcAndroidHostApi {
   bool tagIntentAllowed = true;
   bool settingsOpened = false;
 
+  bool readerOptionSupported = false;
+  bool readerOptionEnabled = true;
+  bool nfcSettingsScreenExists = true;
+  bool nfcSettingsOpened = false;
+
   bool eventsEnabled = false;
   int enableEventsCount = 0;
   int disableEventsCount = 0;
@@ -71,6 +76,18 @@ class _FakeAndroidHost extends NfcAndroidHostApi {
   Future<bool> openTagIntentPreferenceSettings() async {
     settingsOpened = true;
     return tagIntentSupported;
+  }
+
+  @override
+  Future<bool> isReaderOptionSupported() async => readerOptionSupported;
+
+  @override
+  Future<bool> isReaderOptionEnabled() async => readerOptionEnabled;
+
+  @override
+  Future<bool> openNfcSettings() async {
+    nfcSettingsOpened = true;
+    return nfcSettingsScreenExists;
   }
 
   @override
@@ -156,6 +173,38 @@ void main() {
       // False has to mean "the user said no". A device with no allowlist reporting false
       // would send an app to a settings screen that does not exist.
       expect(await NfcUtilAndroid.instance.isTagIntentAllowed(), isTrue);
+    });
+  });
+
+  group('the reader option', () {
+    test('reads as on where there is no such switch to be off', () async {
+      // The same shape as the tag intent allowlist, and for the same reason: false has to
+      // mean the user turned reading off. A phone below API 35 reporting false would send an
+      // app to a switch that is not on it.
+      expect(await NfcUtilAndroid.instance.isReaderOptionSupported(), isFalse);
+      expect(await NfcUtilAndroid.instance.isReaderOptionEnabled(), isTrue);
+    });
+
+    test('false is the user having turned tag reading off', () async {
+      // The failure this exists to explain: the adapter is on, startSession succeeds, and no
+      // tag is ever discovered. Nothing else in the capability surface answers that.
+      host.readerOptionSupported = true;
+      host.readerOptionEnabled = false;
+
+      expect(await NfcUtilAndroid.instance.isReaderOptionSupported(), isTrue);
+      expect(await NfcUtilAndroid.instance.isReaderOptionEnabled(), isFalse);
+    });
+
+    test('the settings screen is opened, not the switch flipped', () async {
+      // Nothing here can turn the option back on; all an app can do is take the user to it.
+      expect(await NfcUtilAndroid.instance.openNfcSettings(), isTrue);
+      expect(host.nfcSettingsOpened, isTrue);
+    });
+
+    test('a device with no such screen says so rather than throwing', () async {
+      host.nfcSettingsScreenExists = false;
+
+      expect(await NfcUtilAndroid.instance.openNfcSettings(), isFalse);
     });
   });
 

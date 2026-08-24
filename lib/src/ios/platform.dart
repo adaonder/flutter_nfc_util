@@ -94,6 +94,15 @@ class NfcUtilIos {
   /// each tag; call it directly to move on from a tag early.
   Future<void> tagSessionRestartPolling() => iosApi.tagSessionRestartPolling();
 
+  /// Whether [tag] is still connected and reachable.
+  ///
+  /// `NFCTag.isAvailable` asks about this one tag, not about the field: a tag the session
+  /// has already let go of -- polling restarted, the session ended, the card lifted and put
+  /// back -- reads false even while a card is sitting on the phone. Worth a call before a
+  /// long exchange, so a tag that has drifted out of range says so here rather than halfway
+  /// through a write.
+  Future<bool> tagIsAvailable(NfcTag tag) => iosApi.tagIsAvailable(tag.handle);
+
   /// Whether this device can run a VAS session.
   Future<bool> vasSessionReadingAvailable() => iosApi.vasSessionReadingAvailable();
 

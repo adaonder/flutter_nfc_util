@@ -1,3 +1,150 @@
+## 3.3.0
+
+The audit release. Nothing here came from a competing package -- a survey of the Flutter,
+React Native, Capacitor and Cordova NFC libraries turned up no capability this one lacked.
+What it turned up instead was surface sitting unclaimed in Apple's and Google's own SDKs,
+some of it public for a decade, which a release-by-release reading of the platforms cannot
+see because nothing about it is new.
+
+**The two entries worth reading are the first two.** One is a hole you cannot work around,
+the other is a wrong answer.
+
+Nothing here is breaking. `compileSdk` stays at 36, `minSdk` at 24, the iOS deployment
+target at 15.6, and no value was added to any existing public enum. Two new public libraries
+appear, `package:nfc_util/apdu.dart` and `package:nfc_util/testing.dart`, and one method is
+deprecated without being removed.
+
+* **iOS could not send half of the ISO 15693 command set, and there was no way around it.**
+  *(Fix -- anyone reading ISO 15693 / NFC-V tags on iOS.)* Thirteen of `NFCISO15693Tag`'s
+  methods were never bridged, and `customCommand` is not an escape hatch for them: CoreNFC
+  restricts it to command codes `A0`--`DF`, while every ISO 15693-3 security command
+  (authenticate `35`, key update `36`, challenge `39`, read buffer `3A`) and both fast-read
+  commands (`2D`, `3D`) sit outside that window. So a tag that Android drives perfectly well
+  through `NfcV.transceive` simply could not be driven from iOS through this package -- the
+  opposite direction from every asymmetry the README documents.
+
+  The whole protocol is now bridged. The one that closes the hole on its own is
+  `Iso15693.sendRequest`, the general carrier: request flag, command code, data. Alongside
+  it, `fastReadMultipleBlocks`, `extendedFastReadMultipleBlocks`,
+  `extendedWriteMultipleBlocks`, `extendedGetMultipleBlockSecurityStatus`, `authenticate`,
+  `keyUpdate`, `challenge`, `readBuffer`, and the two commands that take a
+  `Iso15693CommandConfiguration` so CoreNFC retries inside its own session rather than
+  paying a round trip to Dart per attempt.
+
+  Four of these hand back the tag's 8-bit response flag, which is now the new
+  `Iso15693ResponseFlag` set on `Iso15693Response` rather than being swallowed. All of this
+  is iOS 14 API, well under the 15.6 deployment target, so none of it is gated and no floor
+  moved.
+
+* **iOS silently picked one card out of a wallet and told you nothing.** *(Fix -- anyone
+  whose users might tap a wallet rather than a loose card.)* When CoreNFC reported several
+  tags in one detection, the plugin addressed the first and dropped the rest without a
+  signal. Which card that is, is not deterministic, so the same wallet could read as a
+  different card on consecutive taps and nothing anywhere said so. `NfcTag.otherTagCount`
+  now reports how many others were there -- zero for the ordinary single-card tap. It is
+  `null` on Android, where reader mode delivers one tag per callback and the question does
+  not arise.
+
+  Deliberately a field rather than a callback: an app should not have to opt in to being
+  told its read may have been the wrong card. What to do about it stays the app's -- asking
+  the user to present one card is a sentence only they can write, in only their language.
+
+* **`package:nfc_util/apdu.dart`, so a long card response is not silently truncated.**
+  *(New -- anyone talking to an ISO 7816 card, which is every DESFire, ePassport, EMV or
+  applet exchange.)* Neither CoreNFC nor `android.nfc.tech.IsoDep` chains for the caller.
+  When a card answers `61xx` -- "more data available, ask for the rest" -- you got the first
+  frame and a status word, and code that did not know to loop got a truncated response with
+  no error. Every serious consumer has been writing that loop by hand.
+
+  `CommandApdu` encodes the four ISO 7816-4 cases in both short and extended form, so
+  `IsoDep.isExtendedLengthApduSupported` finally has something that can act on it. `StatusWord`
+  is a sealed hierarchy rather than an enum -- `StatusWordUnrecognised` keeps the raw bytes,
+  because a card is allowed to answer something this package has never heard of and that must
+  not be a crash. `Iso7816Chaining` handles `61xx` and `6Cxx` against a function you supply,
+  so it works over the iOS and Android surfaces alike.
+
+  It is opt-in, and it is not wired into `transceive` or `Iso7816.sendCommand`. DESFire's own
+  `AF` continuation and ISO 7816 secure messaging manage their own, and a transport that
+  chained underneath them would corrupt both.
+
+  All of it is pure Dart with no platform call, so it runs in a plain `flutter test` with no
+  device -- the same property `package:nfc_util/ndef.dart` has.
+
+* **`package:nfc_util/testing.dart`, because the documented test story required an
+  implementation import.** *(New -- anyone with a test.)* `debugReplaceApis` was exported
+  from none of the four public libraries, so following the README meant importing
+  `package:nfc_util/src/api.dart` and tripping `implementation_imports` -- a lint this
+  package's own config turns on. It now exports `debugReplaceApis`, a `fakeNfcTag` builder
+  that takes public types rather than the generated ones, and default fakes for all three
+  host APIs so a test overrides only what it asserts on.
+
+  This is not a convenience. The README already says CoreNFC sessions do not start in the
+  Simulator and no emulator has an NFC radio; fakes are the only mechanism by which any CI
+  exercises a tap at all. The library's own documentation states where the boundary still
+  is: a host call naming a generated class or enum anywhere in its signature cannot be
+  overridden without that implementation import, and the generated shapes are not
+  re-exported because they change without a major version.
+
+* **`isReaderOptionEnabled()`, for a dead end that reported itself as healthy.** *(New,
+  Android.)* NFC can be on while tag *reading* is off -- a separate Android 15 switch.
+  `checkAvailability()` answered `enabled`, `startSession` succeeded, and no tag was ever
+  discovered. Same silent shape as the intent-side failures `checkTagIntentSetup()` was
+  added for in 3.2.0. With `isReaderOptionSupported()`. Both answer `true` below API 35,
+  where the switch does not exist, so `false` always means the user actually turned it off.
+
+  Not folded into `checkAvailability()`: a new `NfcAvailability` value would be a breaking
+  change for one diagnostic.
+
+* **`openNfcSettings()`.** *(New, Android.)* Takes the user to the system NFC screen, falling
+  back to wireless settings where there is none. The package already shipped
+  `openTagIntentPreferenceSettings()` and already told you in two places to offer "open
+  settings" only when it would help -- and then made you write the `Intent` yourself.
+
+* **`reset()` on the Android tag technologies.** *(New, Android.)* Closes the connection and
+  reopens it, reselecting the tag in the field. The plugin reuses a connection across calls
+  and `isConnected` is a local flag, so a Mifare Classic authentication that fails halts the
+  tag while the flag still reads true and every later command fails too. Trying a list of
+  candidate keys against a sector was therefore impossible without tearing down the whole
+  session. It deliberately discards sector authentication and any `setTimeout`, which is
+  said plainly on the method.
+
+  `isConnected` itself is still not exposed. It reads like a presence check and is not one.
+
+* **The query half of `CardEmulation`.** *(New, Android.)* 3.2.0 shipped everything that
+  writes -- register AIDs, set preferred, observe mode, polling-loop filters -- and nothing
+  that reads back. Now `supportsAidPrefixRegistration()`, `aidsForService()`,
+  `isDefaultServiceForCategory()`, `isDefaultServiceForAid()`,
+  `categoryAllowsForegroundPreference()` and `selectionModeForCategory()`, with
+  `CardEmulationCategory` and `AidSelectionMode`.
+
+  `supportsAidPrefixRegistration()` is the one that earns its place: without it, registering
+  a prefix AID on hardware that cannot route prefixes just fails, indistinguishable from a
+  malformed AID. Every one of these has been public since API 19 or 21 -- below this
+  package's own floor -- which is exactly why a version-diff reading of the platform never
+  surfaced them.
+
+* **Smaller things.** `MifareClassic.keyDefault`, `keyMifareApplicationDirectory` and
+  `keyNfcForum`, the platform's own published keys, plus its block size and four card sizes;
+  each key is a getter handing back a fresh list, because a shared `Uint8List` is one stray
+  write away from breaking authentication process-wide with a failure that looks like a
+  wrong key. `NfcUtilIos.tagIsAvailable(tag)`, which asks whether *that* tag is still
+  reachable rather than whether some tag is in the field. `Ndef.uncheckedIos(tag)`, so a
+  session started with `skipNdefCheck` can still read and write NDEF on iOS -- the host calls
+  were always handle-based and would have worked; only the constructor stood in the way. It
+  is iOS-only on purpose, and says so: on Android `skipNdefCheck` means the platform never
+  attached the tech at all.
+
+* **`Iso15693.getSystemInfo` is deprecated, not removed.** It calls a selector Apple
+  deprecated in iOS 14. `getSystemInfoAndUid()` replaces it and returns the tag UID as well.
+  The old one keeps working and reports `uid` as `null`.
+
+### Not verified on hardware
+
+Everything above passes the ten test layers, including a real CoreNFC build. None of it has
+touched a card. The ISO 15693 security commands need a tag that implements ISO/IEC 29167,
+`reset()` needs a Mifare Classic card and a wrong key, and the card-emulation queries need a
+reader. `ROADMAP.md` tracks what is still owed a measurement.
+
 ## 3.2.0
 
 Android caught up. Three OS releases had added NFC surface this package did not reach --

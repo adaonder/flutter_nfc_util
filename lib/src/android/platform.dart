@@ -217,6 +217,26 @@ class NfcUtilAndroid {
   /// Whether secure NFC is on, restricting tag reading to an unlocked device.
   Future<bool> isSecureNfcEnabled() => androidApi.isSecureNfcEnabled();
 
+  /// Whether the device implements Android 15's separate reader switch. API 35 and above;
+  /// false below.
+  Future<bool> isReaderOptionSupported() => androidApi.isReaderOptionSupported();
+
+  /// Whether tag *reading* is switched on, which is a switch of its own and not the adapter.
+  ///
+  /// With the adapter on and this off, `NfcUtil.startSession` succeeds and no tag is ever
+  /// discovered -- a silent dead end, and the reading side of exactly the problem
+  /// [checkTagIntentSetup] answers on the intent side. True below API 35, where the switch
+  /// does not exist, so false always means the user actually turned it off, and
+  /// [openNfcSettings] is where they turn it back on.
+  Future<bool> isReaderOptionEnabled() => androidApi.isReaderOptionEnabled();
+
+  /// Opens the system NFC screen -- *Settings > Connected devices > Connection preferences >
+  /// NFC* -- which is where both the adapter and the reader switch live.
+  ///
+  /// Returns false when there is no such screen, or no activity to start it from. Nothing can
+  /// be switched on programmatically here; this only takes the user to the switches.
+  Future<bool> openNfcSettings() => androidApi.openNfcSettings();
+
   /// Starts reader mode with exactly [flags], bypassing the cross-platform mapping.
   ///
   /// The tag and error callbacks are the session's, so register them the same way

@@ -26,6 +26,18 @@ abstract class _AndroidTag {
 
   /// The largest payload [transceive] accepts, in bytes.
   Future<int> getMaxTransceiveLength() => androidApi.getMaxTransceiveLength(_handle, _tech);
+
+  /// Closes the connection to the tag and opens it again, reselecting it in the RF field.
+  ///
+  /// This is not free, and what it costs is not obvious: the new connection carries none of
+  /// the old one's state, so a Mifare Classic sector authentication and any timeout set with
+  /// `setTimeout` are both deliberately discarded.
+  ///
+  /// What it buys is a way to carry on after an authentication that failed. A wrong key halts
+  /// the tag, while the connection the plugin holds still looks alive, so every command after
+  /// it fails too -- which makes trying a list of candidate keys against a sector impossible
+  /// without this, short of ending the session and asking the user to tap again.
+  Future<void> reset() => androidApi.resetTech(_handle, _tech);
 }
 
 /// A technology whose transceive timeout can be read and changed.
@@ -238,6 +250,48 @@ enum MifareClassicType { classic, plus, pro, unknown }
 /// NXP Mifare Classic. Android only -- iOS cannot talk to these tags at all, which is an
 /// Apple restriction rather than a gap in this package.
 class MifareClassic extends _AndroidTagWithTimeout {
+  // The constants of `android.nfc.tech.MifareClassic`, which the rest of this class wraps the
+  // methods of. They are transcribed from AOSP `MifareClassic.java`.
+  //
+  // The boundary, so it does not have to be rediscovered: these three keys are the platform's
+  // own published values and nothing more. A collected key dictionary, or a routine that
+  // sweeps keys across a card's sectors, is a key-recovery tool and does not belong in this
+  // package at any layer.
+
+  // Each of these is a getter that builds a fresh list rather than a `static final` holding
+  // one. A `Uint8List` is mutable and has no read-only form worth the dependency, so a
+  // single shared instance is one `key[0] = 0` in unrelated code away from silently
+  // breaking authentication everywhere else in the process -- against a card, with a
+  // failure that looks like a wrong key rather than like corruption. Six bytes per call is
+  // not a cost worth that.
+
+  /// The factory key, `FF FF FF FF FF FF`, that a sector still answers to until someone
+  /// personalises it. AOSP `MifareClassic.KEY_DEFAULT`.
+  static Uint8List get keyDefault => Uint8List.fromList(const [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+
+  /// The key `A0 A1 A2 A3 A4 A5`, which the Mifare Application Directory in sector 0 is
+  /// published with. AOSP `MifareClassic.KEY_MIFARE_APPLICATION_DIRECTORY`.
+  static Uint8List get keyMifareApplicationDirectory => Uint8List.fromList(const [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5]);
+
+  /// The key an NFC Forum formatted card uses for its NDEF sectors, `D3 F7 D3 F7 D3 F7`.
+  /// AOSP `MifareClassic.KEY_NFC_FORUM`.
+  static Uint8List get keyNfcForum => Uint8List.fromList(const [0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7]);
+
+  /// Bytes in one block, which is also the length [readBlock] returns and [writeBlock] wants.
+  static const int blockSize = 16;
+
+  /// [size] of a Mifare Classic Mini, in bytes.
+  static const int sizeMini = 320;
+
+  /// [size] of a Mifare Classic 1K, in bytes.
+  static const int size1K = 1024;
+
+  /// [size] of a Mifare Classic 2K, in bytes.
+  static const int size2K = 2048;
+
+  /// [size] of a Mifare Classic 4K, in bytes.
+  static const int size4K = 4096;
+
   const MifareClassic._(
     super.handle, {
     required this.type,

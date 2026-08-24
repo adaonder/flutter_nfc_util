@@ -12,11 +12,55 @@ class _FakeAndroidHost extends NfcAndroidHostApi {
   bool? lastObserveModeRequest;
   bool? lastShouldDefault;
 
+  bool prefixRegistration = false;
+  bool foregroundPreference = false;
+  bool defaultForCategory = false;
+  bool defaultForAid = false;
+  AidSelectionModePigeon selectionMode = AidSelectionModePigeon.preferDefault;
+  List<String> registeredAids = const [];
+
+  /// Every category a query was asked about, in the order it was asked.
+  final categories = <CardEmulationCategoryPigeon>[];
+  String? lastAid;
+
   String? lastFilter;
   String? lastPattern;
   bool? lastAutoTransact;
   final removed = <String>[];
   final removedPatterns = <String>[];
+
+  @override
+  Future<bool> hceSupportsAidPrefixRegistration() async => prefixRegistration;
+
+  @override
+  Future<bool> hceCategoryAllowsForegroundPreference(CardEmulationCategoryPigeon category) async {
+    categories.add(category);
+    return foregroundPreference;
+  }
+
+  @override
+  Future<AidSelectionModePigeon> hceSelectionModeForCategory(CardEmulationCategoryPigeon category) async {
+    categories.add(category);
+    return selectionMode;
+  }
+
+  @override
+  Future<bool> hceIsDefaultServiceForCategory(CardEmulationCategoryPigeon category) async {
+    categories.add(category);
+    return defaultForCategory;
+  }
+
+  @override
+  Future<bool> hceIsDefaultServiceForAid(String aid) async {
+    lastAid = aid;
+    return defaultForAid;
+  }
+
+  @override
+  Future<List<String>> hceAidsForService(CardEmulationCategoryPigeon category) async {
+    categories.add(category);
+    return registeredAids;
+  }
 
   @override
   Future<bool> hceSetObserveModeEnabled(bool enabled) async {
@@ -88,6 +132,86 @@ void main() {
   tearDown(() {
     HostCardEmulation.instance.onPollingFrames = null;
     restore();
+  });
+
+  group('what the platform will do with a registration', () {
+    test('each category goes out as its own constant', () async {
+      // Two values, and asking about the wrong one answers something true about a category
+      // the app never registered under -- which reads exactly like the right answer.
+      await HostCardEmulation.instance.categoryAllowsForegroundPreference(CardEmulationCategory.payment);
+      await HostCardEmulation.instance.isDefaultServiceForCategory(CardEmulationCategory.other);
+
+      expect(host.categories, [CardEmulationCategoryPigeon.payment, CardEmulationCategoryPigeon.other]);
+    });
+
+    test('every selection mode the platform names has a name here', () async {
+      const pairs = <(AidSelectionModePigeon, AidSelectionMode)>[
+        (AidSelectionModePigeon.preferDefault, AidSelectionMode.preferDefault),
+        (AidSelectionModePigeon.askIfConflict, AidSelectionMode.askIfConflict),
+        (AidSelectionModePigeon.alwaysAsk, AidSelectionMode.alwaysAsk),
+        (AidSelectionModePigeon.unknown, AidSelectionMode.unknown),
+      ];
+
+      // Worth spelling out because the platform's own constants are not in this order --
+      // SELECTION_MODE_ALWAYS_ASK is 1 and SELECTION_MODE_ASK_IF_CONFLICT is 2, the reverse
+      // of the wire enum -- so anything ordinal-based reports the opposite of what the
+      // device said, and both answers are plausible.
+      expect(pairs.map((pair) => pair.$1), unorderedEquals(AidSelectionModePigeon.values));
+
+      for (final (wire, expected) in pairs) {
+        host.selectionMode = wire;
+        expect(
+          await HostCardEmulation.instance.selectionModeForCategory(CardEmulationCategory.other),
+          expected,
+          reason: wire.name,
+        );
+      }
+    });
+
+    test('a constant this release does not name is reported rather than guessed at', () async {
+      // Folding it into preferDefault would quietly mispredict where a tap goes.
+      host.selectionMode = AidSelectionModePigeon.unknown;
+
+      expect(
+        await HostCardEmulation.instance.selectionModeForCategory(CardEmulationCategory.payment),
+        AidSelectionMode.unknown,
+      );
+    });
+
+    test('a service nobody registered under reports no AIDs, not a failure', () async {
+      // The framework answers null there, meaning "no AIDs routed here" rather than "the
+      // question failed", and an app reading the registration back has to be able to tell.
+      expect(await HostCardEmulation.instance.aidsForService(CardEmulationCategory.other), isEmpty);
+      expect(host.categories, [CardEmulationCategoryPigeon.other]);
+    });
+
+    test('the readback lists what is registered, manifest and run time together', () async {
+      host.registeredAids = const ['F0010203040506', 'A0000002471001'];
+
+      expect(await HostCardEmulation.instance.aidsForService(CardEmulationCategory.other), [
+        'F0010203040506',
+        'A0000002471001',
+      ]);
+    });
+
+    test('the per-AID question is asked about the AID, not the category', () async {
+      // An app can hold an AID without being the category default, and be the category
+      // default without holding a given AID, so these are two different answers.
+      host.defaultForAid = true;
+
+      expect(await HostCardEmulation.instance.isDefaultServiceForAid('F0010203040506'), isTrue);
+      expect(host.lastAid, 'F0010203040506');
+      expect(host.categories, isEmpty);
+    });
+
+    test('prefix routing is a capability of the controller, asked before it is used', () async {
+      // Registering a prefix on hardware that cannot route one just returns false, with
+      // nothing to tell it apart from an AID the platform considers malformed.
+      expect(await HostCardEmulation.instance.supportsAidPrefixRegistration(), isFalse);
+
+      host.prefixRegistration = true;
+      expect(await HostCardEmulation.instance.supportsAidPrefixRegistration(), isTrue);
+    });
   });
 
   group('observe mode', () {

@@ -83,6 +83,15 @@ enum NfcInternalErrorPigeon { unknown, nfcCrashRestart, nfcHardwareError, comman
 /// by their own methods, which take no technology.
 enum AndroidTechPigeon { nfcA, nfcB, nfcF, nfcV, isoDep, mifareClassic, mifareUltralight }
 
+/// `CardEmulation.CATEGORY_*`. Android only.
+enum CardEmulationCategoryPigeon { payment, other }
+
+/// `CardEmulation.SELECTION_MODE_*`. Android only.
+///
+/// [unknown] covers a constant this version does not name, so a future platform value
+/// cannot turn into a crash.
+enum AidSelectionModePigeon { preferDefault, askIfConflict, alwaysAsk, unknown }
+
 /// NDEF Type-Name-Format, as defined by the NFC Forum. Ordinals match the on-tag values
 /// 0x00..0x06.
 enum TypeNameFormatPigeon { empty, wellKnown, media, absoluteUri, external, unknown, unchanged }
@@ -99,6 +108,21 @@ enum MiFareFamilyPigeon { unknown, ultralight, plus, desfire }
 enum NdefStatusPigeon { notSupported, readOnly, readWrite }
 
 enum Iso15693RequestFlagPigeon { address, dualSubCarriers, highDataRate, option, protocolExtension, select }
+
+/// `NFCISO15693ResponseFlag`. iOS only.
+///
+/// Reported by the four ISO 15693 commands that hand back the tag's 8-bit response flag
+/// rather than swallowing it: authenticate, key update, read buffer, and the general
+/// [NfcIosHostApi.iso15693SendRequest].
+enum Iso15693ResponseFlagPigeon {
+  error,
+  responseBufferValid,
+  finalResponse,
+  protocolExtension,
+  blockSecurityStatusBit5,
+  blockSecurityStatusBit6,
+  waitTimeExtension,
+}
 
 enum FeliCaPollingRequestCodePigeon { noRequest, systemCode, communicationPerformance }
 
@@ -438,6 +462,14 @@ class TagPigeon {
   MifareUltralightPigeon? mifareUltralight;
   NfcBarcodePigeon? nfcBarcode;
 
+  /// How many *other* tags CoreNFC reported in the same detection. iOS only; null on
+  /// Android, where reader mode delivers one tag per callback.
+  ///
+  /// The session addresses one tag at a time, so anything above zero means a tap the app
+  /// should probably ask the user to repeat with one card. Before 3.3.0 the extra tags were
+  /// dropped with no signal at all, so which card answered was not deterministic.
+  int? otherTagCount;
+
   NdefIosPigeon? ndefIos;
   FeliCaPigeon? felica;
   Iso7816Pigeon? iso7816;
@@ -492,6 +524,27 @@ class Iso15693SystemInfoPigeon {
   late int dataStorageFormatIdentifier;
   late int icReference;
   late int totalBlocks;
+
+  /// The tag UID, which the iOS 14 replacement selector returns alongside the rest. Null
+  /// only if the tag answered without one.
+  Uint8List? uid;
+}
+
+/// A response that carries the ISO 15693 response flag as well as its data.
+class Iso15693ResponsePigeon {
+  late List<Iso15693ResponseFlagPigeon> flags;
+  late Uint8List data;
+}
+
+/// `NFCTagCommandConfiguration`, which lets CoreNFC retry inside its own session rather
+/// than paying a Dart round trip per attempt. iOS only.
+///
+/// Only two ISO 15693 commands accept one; there is no general form.
+class Iso15693CommandConfigurationPigeon {
+  late int maximumRetries;
+
+  /// `NFCTagCommandConfiguration.retryInterval`, in seconds.
+  late double retryIntervalSeconds;
 }
 
 class QueryNdefStatusResponsePigeon {
@@ -565,6 +618,20 @@ abstract class NfcAndroidHostApi {
   bool isSecureNfcSupported();
   bool isSecureNfcEnabled();
 
+  /// Whether the device implements the Android 15 reader-option switch. False below API 35.
+  bool isReaderOptionSupported();
+
+  /// Whether tag *reading* is switched on, which is separate from the adapter being on.
+  ///
+  /// With the adapter on and this off, a session starts and no tag is ever discovered --
+  /// the same shape of silent dead end that [checkTagIntentSetup] answers on the intent
+  /// side. True below API 35, where the switch does not exist.
+  bool isReaderOptionEnabled();
+
+  /// Opens the system NFC settings screen. False when there is no activity to start it
+  /// from, or the device has no such screen.
+  bool openNfcSettings();
+
   /// The raw escape hatch: full control over `NfcAdapter.enableReaderMode` flags, for
   /// combinations the cross-platform `startSession` does not express.
   @async
@@ -617,6 +684,17 @@ abstract class NfcAndroidHostApi {
 
   @async
   void setTimeout(String handle, AndroidTechPigeon tech, int timeout);
+
+  /// Closes the connection to the tag and opens it again, which reselects it in the RF
+  /// field.
+  ///
+  /// The plugin reuses a connection across calls, and `isConnected` is a local flag: a
+  /// Mifare Classic sector authentication that fails halts the tag while the flag still
+  /// reads true, so every later command on that tag fails too. This is the only way out
+  /// short of tearing down the session. It deliberately discards sector authentication and
+  /// any timeout that was set.
+  @async
+  void resetTech(String handle, AndroidTechPigeon tech);
 
   @async
   bool mifareClassicAuthenticateSector(String handle, int sectorIndex, Uint8List key, bool useKeyA);
@@ -674,6 +752,30 @@ abstract class NfcAndroidHostApi {
   /// it rather than the user's default wallet.
   void hceSetPreferredService(bool preferred);
 
+  // The query half of CardEmulation. Every one of these has been public since API 19 or 21,
+  // well below this package's minSdk, so none is version-gated.
+
+  /// Whether the controller can route an AID *prefix* at all. Registering a prefix on
+  /// hardware that cannot simply fails, with nothing to distinguish it from a bad AID.
+  bool hceSupportsAidPrefixRegistration();
+
+  /// Whether [hceSetPreferredService] has any effect for this category. Always false for
+  /// payment on a device where the user's wallet choice is final.
+  bool hceCategoryAllowsForegroundPreference(CardEmulationCategoryPigeon category);
+
+  /// How the platform picks between apps that claim the same AID in this category.
+  AidSelectionModePigeon hceSelectionModeForCategory(CardEmulationCategoryPigeon category);
+
+  /// Whether this app's service is the user's default for the category.
+  bool hceIsDefaultServiceForCategory(CardEmulationCategoryPigeon category);
+
+  /// Whether this app's service is the one a reader selecting [aid] would reach.
+  bool hceIsDefaultServiceForAid(String aid);
+
+  /// The AIDs currently registered against this app's service, static and dynamic together
+  /// -- the readback for [hceRegisterAids].
+  List<String> hceAidsForService(CardEmulationCategoryPigeon category);
+
   // Observe mode and polling loop filters. API 35 and above.
 
   bool hceIsObserveModeSupported();
@@ -721,6 +823,12 @@ abstract class NfcAndroidHostApi {
 @HostApi()
 abstract class NfcIosHostApi {
   bool tagSessionReadingAvailable();
+
+  /// `NFCTag.isAvailable` for the tag behind [handle].
+  ///
+  /// Asks whether *this* tag is still connected and reachable, not whether some tag is in
+  /// the field. False for a handle the session has already let go of.
+  bool tagIsAvailable(String handle);
 
   @async
   void tagSessionSetAlertMessage(String alertMessage);
@@ -882,6 +990,116 @@ abstract class NfcIosHostApi {
     List<Iso15693RequestFlagPigeon> flags,
     int customCommandCode,
     Uint8List customRequestParameters,
+  );
+
+  // The rest of NFCISO15693Tag. Everything below is iOS 14, well under this package's 15.6
+  // deployment target, so none of it needs an availability check.
+  //
+  // [iso15693SendRequest] is the one that matters most: CoreNFC restricts
+  // [iso15693CustomCommand] to command codes 0xA0..0xDF, which puts every ISO 15693-3
+  // security command (0x35..0x3A) out of reach. Without this there is no way to send them
+  // from iOS at all, while Android reaches the same tag through `NfcV.transceive`.
+
+  /// The general ISO 15693-3 request: request flag, command code, optional data.
+  ///
+  /// The whole frame must stay within 256 bytes.
+  @async
+  Iso15693ResponsePigeon iso15693SendRequest(String handle, int flags, int commandCode, Uint8List? data);
+
+  /// Fast read multiple blocks (0x2D).
+  @async
+  List<Uint8List> iso15693FastReadMultipleBlocks(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int blockNumber,
+    int numberOfBlocks,
+  );
+
+  /// Extended fast read multiple blocks (0x3D).
+  @async
+  List<Uint8List> iso15693ExtendedFastReadMultipleBlocks(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int blockNumber,
+    int numberOfBlocks,
+  );
+
+  /// Extended write multiple blocks (0x34).
+  @async
+  void iso15693ExtendedWriteMultipleBlocks(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int blockNumber,
+    int numberOfBlocks,
+    List<Uint8List> dataBlocks,
+  );
+
+  /// Extended get multiple block security status (0x3C).
+  @async
+  List<int> iso15693ExtendedGetMultipleBlockSecurityStatus(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int blockNumber,
+    int numberOfBlocks,
+  );
+
+  /// Authenticate (0x35), per ISO/IEC 29167. The in-process reply is returned unprocessed.
+  @async
+  Iso15693ResponsePigeon iso15693Authenticate(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int cryptoSuiteIdentifier,
+    Uint8List message,
+  );
+
+  /// Key update (0x36). The message content follows the crypto suite used to authenticate.
+  @async
+  Iso15693ResponsePigeon iso15693KeyUpdate(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int keyIdentifier,
+    Uint8List message,
+  );
+
+  /// Challenge (0x39). Answers nothing on success; read the result with
+  /// [iso15693ReadBuffer].
+  @async
+  void iso15693Challenge(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int cryptoSuiteIdentifier,
+    Uint8List message,
+  );
+
+  /// Read buffer (0x3A).
+  @async
+  Iso15693ResponsePigeon iso15693ReadBuffer(String handle, List<Iso15693RequestFlagPigeon> flags);
+
+  /// `getSystemInfoAndUIDWithRequestFlag`, the iOS 14 replacement for the selector
+  /// [iso15693GetSystemInfo] used until 3.3.0. Returns the UID as well.
+  @async
+  Iso15693SystemInfoPigeon iso15693GetSystemInfoAndUid(String handle, List<Iso15693RequestFlagPigeon> flags);
+
+  /// Read multiple blocks with a retry configuration, so CoreNFC retries inside its own
+  /// session. [chunkSize] is how many blocks each request asks for.
+  @async
+  List<Uint8List> iso15693ReadMultipleBlocksWithConfiguration(
+    String handle,
+    int blockNumber,
+    int numberOfBlocks,
+    int chunkSize,
+    Iso15693CommandConfigurationPigeon configuration,
+  );
+
+  /// Custom command with a retry configuration. [manufacturerCode] is the 8-bit IC
+  /// manufacturer code CoreNFC puts in the frame.
+  @async
+  Uint8List iso15693CustomCommandWithConfiguration(
+    String handle,
+    int manufacturerCode,
+    int customCommandCode,
+    Uint8List customRequestParameters,
+    Iso15693CommandConfigurationPigeon configuration,
   );
 
   @async

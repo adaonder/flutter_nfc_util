@@ -51,6 +51,16 @@ class NfcTag {
   /// `MifareClassic`. Empty on iOS, which has no equivalent listing.
   List<String> get techList => data.techList ?? const [];
 
+  /// How many *other* tags were in the field when this one was discovered. iOS only.
+  ///
+  /// Zero for the ordinary single-card tap. Above zero means CoreNFC saw several and this
+  /// is whichever one it listed first -- which card that is, is not deterministic, so the
+  /// honest response is to ask the user to present one card and try again.
+  ///
+  /// Null on Android, where reader mode delivers one tag per callback and the question does
+  /// not arise. Before 3.3.0 the extra tags were dropped with no signal on either platform.
+  int? get otherTagCount => data.otherTagCount;
+
   @override
   String toString() => 'NfcTag(${id == null ? 'no id' : _hex(id!)}${techList.isEmpty ? '' : ', $techList'})';
 }

@@ -28,10 +28,11 @@ New here? Everything you need for a first tag read is in [Quick start](#quick-st
   * [Only if you need it](#only-if-you-need-it)
   * [Troubleshooting](#troubleshooting)
 * [Android 16 and 17](#android-16-and-17)
-* [The four libraries](#the-four-libraries)
+* [The six libraries](#the-six-libraries)
 * [Sessions](#sessions)
 * [NDEF](#ndef)
 * [Tag technologies](#tag-technologies)
+* [ISO 7816 APDUs](#iso-7816-apdus)
 * [Background tag reading](#background-tag-reading)
 * [Host card emulation](#host-card-emulation)
 * [Apple Wallet passes](#apple-wallet-passes)
@@ -46,6 +47,7 @@ New here? Everything you need for a first tag read is in [Quick start](#quick-st
 | | Android | iOS |
 |---|---|---|
 | Reader sessions | `enableReaderMode` | `NFCTagReaderSession` |
+| Several tags in one detection | — reader mode delivers one tag per callback | ✅ counted by `NfcTag.otherTagCount` |
 | NDEF read / write / lock | ✅ | ✅ |
 | NDEF format (unformatted tag) | ✅ | — CoreNFC has no equivalent |
 | NDEF wire codec, typed records | ✅ pure Dart, works with no tag | ✅ |
@@ -53,24 +55,28 @@ New here? Everything you need for a first tag read is in [Quick start](#quick-st
 | Mifare Classic | ✅ auth, blocks, value ops, geometry | — Apple does not allow it |
 | Mifare Ultralight | ✅ | ✅ via `MiFare` |
 | FeliCa | ✅ via `NfcF` | ✅ 10 typed commands |
-| ISO 15693 | ✅ via `NfcV` | ✅ 19 typed commands |
+| ISO 15693 | ✅ via `NfcV` | ✅ 30 typed commands, the security ones included, plus raw `sendRequest` |
 | ISO 7816 | ✅ via `IsoDep` | ✅ |
+| ISO 7816-4 APDUs, status words, `61xx` chaining | ✅ pure Dart, works with no tag | ✅ |
+| Tag connection reset | ✅ `reset()` | — restarting polling is the nearest thing, and it gives the tag up |
 | Barcode (Kovio) tags | ✅ | — |
 | Background / launch-on-tag reading | ✅ intent filters | ✅ NDEF user activity |
 | Host card emulation | ✅ runtime AID registration | — not available to third-party apps |
+| Card-emulation readback: AID prefix support, registered AIDs, defaults | ✅ | — |
 | Observe mode, polling loop filters | ✅ Android 15 (API 35) | — |
 | Discovery technology, antenna geometry | ✅ API 35 / API 34 | — |
 | Card-emulation event stream | ✅ Android 16 (API 36) | — |
 | Tag-intent allowlist and dispatch check | ✅ Android 16 / 17 | — |
 | Apple Value Added Services | — | ✅ Wallet passes |
 | Adapter state stream, secure NFC | ✅ | — no such state on iOS |
+| Reader-option probe: tag reading off while NFC is on | ✅ Android 15 (API 35) | — no such switch on iOS |
 | Typed errors | ✅ 8 codes | ✅ 24 CoreNFC codes |
 
 ## Install
 
 ```yaml
 dependencies:
-  nfc_util: ^3.2.0
+  nfc_util: ^3.3.0
 ```
 
 Requires Flutter 3.44, Android API 24, iOS 15.6.
@@ -309,9 +315,10 @@ without it, so it builds on any team; add it once your own App ID is provisioned
 | What you see | Why, and what to do |
 |---|---|
 | **iOS: no reader sheet, and no error either.** The call returns and nothing happens. | The FeliCa system codes are missing from `Info.plist` — [step 3](#3-ios-three-things). |
-| `The getter 'instance' isn't defined for the type 'NfcUtil'` | A class of your own named `NfcUtil` shadows the package's. Import it under a prefix — [The four libraries](#the-four-libraries). |
+| `The getter 'instance' isn't defined for the type 'NfcUtil'` | A class of your own named `NfcUtil` shadows the package's. Import it under a prefix — [The six libraries](#the-six-libraries). |
 | `PlatformException(session_already_exists)` | A session is still running. Call `stopSession()` first, and after an error restart only when `error.sessionEnded` is true — [Errors](#errors). |
 | No tag is ever detected | An emulator or the Simulator (neither has a radio), or NFC is switched off. `checkAvailability()` tells the two apart. |
+| **Android: NFC is on, the session starts, and still no tag is ever detected** | Tag *reading* is a switch of its own from Android 15, separate from the adapter, and it is off. `isReaderOptionEnabled()` reports it and `openNfcSettings()` takes the user to it — [Sessions](#sessions). |
 | **Android: the tap opens a different app** | Another app claims the tag first. Call `enableForegroundDispatch()` while your screen is up — [Background tag reading](#background-tag-reading). |
 | A write appears to do nothing | Check `ndef.isWritable`, and `message.byteLength <= ndef.maxSize`, before writing — [NDEF](#ndef). |
 | **iOS: the session ends by itself** | Expected. CoreNFC closes an idle session and reports it through `onError`. |
@@ -399,18 +406,30 @@ been opened once.
 Use `NDEF_DISCOVERED` or `TECH_DISCOVERED` in new manifests. The plugin still accepts tags
 delivered under the old action, because every device up to API 36 still sends it.
 
-## The four libraries
+## The six libraries
 
 Which platforms a class works on is told by the import path, not by a suffix on the class
-name. `nfc_util.dart` and `ndef.dart` work everywhere; `android.dart` and `ios.dart` work only
-on the platform they name.
+name. `nfc_util.dart`, `ndef.dart` and `apdu.dart` work everywhere; `android.dart` and
+`ios.dart` work only on the platform they name.
 
 ```dart
-import 'package:nfc_util/nfc_util.dart';          // NfcUtil, NfcTag, NfcError
-import 'package:nfc_util/ndef.dart';              // Ndef, NdefMessage, typed records
+import 'package:nfc_util/nfc_util.dart';           // NfcUtil, NfcTag, NfcError
+import 'package:nfc_util/ndef.dart';               // Ndef, NdefMessage, typed records
+import 'package:nfc_util/apdu.dart';               // CommandApdu, StatusWord, Iso7816Chaining
 import 'package:nfc_util/android.dart' as android; // android.nfc
 import 'package:nfc_util/ios.dart' as ios;         // CoreNFC
+import 'package:nfc_util/testing.dart';            // test code only: fakes for the platform
 ```
+
+`ndef.dart` and `apdu.dart` share a property the other four do not: **neither needs a tag.**
+The NDEF wire codec and the ISO 7816-4 encoder are values and bytes, with no platform call
+anywhere in them, so both run in a plain `flutter test` on a machine with no NFC radio — see
+[NDEF](#ndef) and [ISO 7816 APDUs](#iso-7816-apdus).
+
+`testing.dart` belongs to a package's *tests* rather than its `lib/`. It replaces the platform
+side with fakes, which is the only way any CI exercises a tap at all, and everything in it is
+inert — no channel is touched and no handle addresses a tag — so an app that reaches for it
+from production code ships that inertness to its users. See [Testing](#testing).
 
 `NfcUtil` is a thin adapter, and it hides nothing: anything it does not cover is reachable
 directly on `NfcUtilAndroid` or `NfcUtilIos`.
@@ -444,12 +463,54 @@ await NfcUtil.instance.startSession(
 `checkAvailability` separates "no NFC hardware" from "the user switched NFC off", so an app
 can offer *open settings* only when that would help. It never throws.
 
+**On Android it is not the only switch.** From Android 15 tag *reading* has one of its own,
+and with the adapter on and that one off the session starts, succeeds, and never discovers a
+tag — the reading side of the same silence [`checkTagIntentSetup()`](#android-16-and-17)
+answers on the intent side:
+
+```dart
+if (!await android.NfcUtilAndroid.instance.isReaderOptionEnabled()) {
+  await android.NfcUtilAndroid.instance.openNfcSettings();   // only takes the user there
+}
+```
+
+It answers true below API 35, where the switch does not exist, so false always means the user
+actually turned it off. `isReaderOptionSupported()` tells the two apart when that matters.
+
 Parameters carrying a platform suffix are ignored on the other platform. A session already
 running is rejected with `session_already_exists` on **both** platforms.
 
 **One session, many tags:** pass `invalidateAfterFirstReadIos: false`. iOS restarts polling
 only after your `onDiscovered` returns, so the tag is never pulled out from under an app
 that is still reading it.
+
+**A wallet reads as one of the cards in it.** When CoreNFC reports several tags in one
+detection this package addresses the first, and `NfcTag.otherTagCount` says how many others
+were there — zero for the ordinary single-card tap, null on Android, where reader mode
+delivers one tag per callback and the question does not arise. Which card came first is not
+deterministic, so the same wallet can read as a different card on consecutive taps:
+
+```dart
+onDiscovered: (tag) async {
+  if ((tag.otherTagCount ?? 0) > 0) {
+    // Several cards were in the field and this is an arbitrary one of them.
+  }
+},
+```
+
+It is a field rather than a callback because an app should not have to opt in to being told
+its read may have been the wrong card. What to do about it stays yours — asking the user to
+present one card is a sentence only your app can write, in only its language.
+
+**`skipNdefCheck` on iOS costs you `Ndef.from(tag)`.** The probe it skips is what that
+constructor is built from, so it answers null even though reading and writing address the tag
+by handle and would work perfectly well. `Ndef.uncheckedIos(tag)` is the way through, and the
+only way to express the sequence Apple documents for a protected tag — authenticate first,
+touch NDEF second. Its `isWritable`, `maxSize` and `cachedMessage` read false, zero and null
+because nothing asked the tag; treat them as unknown and call
+`ios.NfcUtilIos.instance.ndefQueryStatus(tag.handle)` when the real status matters. iOS only:
+on Android `skipNdefCheck` makes the platform leave the technology off the tag altogether, so
+there is nothing to reach.
 
 While an iOS session is up you can narrate it and move it along:
 
@@ -507,7 +568,113 @@ Every class has `from(tag)`, returning null when the tag does not answer to it. 
 captured at discovery; anything needing a round trip is a `Future` method.
 
 The Android connection is opened once and held for the session, so a Mifare Classic sector
-authentication still applies to the reads that follow it.
+authentication still applies to the reads that follow it. That cuts both ways: a wrong key
+halts the tag while the connection the plugin holds still looks alive, and every command after
+it fails too. `reset()` closes that connection and opens it again, reselecting the tag in the
+field, which is what makes trying a list of candidate keys possible without ending the session
+and asking for another tap:
+
+```dart
+final classic = android.MifareClassic.from(tag)!;
+for (final key in [android.MifareClassic.keyDefault, android.MifareClassic.keyNfcForum]) {
+  if (await classic.authenticateSectorWithKeyA(sectorIndex: 1, key: key)) break;
+  await classic.reset();   // the failed attempt halted the tag; the connection starts over
+}
+```
+
+`reset()` is on every Android technology that carries a connection, and it is not free: the
+new connection holds none of the old one's state, so a sector authentication and any
+`setTimeout` are deliberately discarded. `MifareClassic.keyDefault`,
+`keyMifareApplicationDirectory` and `keyNfcForum` are the platform's own published keys, each
+a getter handing back a fresh list — a shared `Uint8List` is one stray write away from
+breaking authentication process-wide, with a failure that looks like a wrong key.
+`MifareClassic.blockSize`, `sizeMini`, `size1K`, `size2K` and `size4K` are there too, for
+reading what `size` came back as.
+
+iOS has no equivalent — restarting polling there gives the tag up rather than reselecting it
+— but it can answer a question Android cannot: `NfcUtilIos.tagIsAvailable(tag)` reports
+whether *that* tag is still connected and reachable. It is not a "is a tag nearby" probe, and
+it answers false for a tag the session has already let go of, so it is for deciding whether a
+half-finished exchange is worth continuing:
+
+```dart
+if (!await ios.NfcUtilIos.instance.tagIsAvailable(tag)) return; // it left the field
+```
+
+## ISO 7816 APDUs
+
+`package:nfc_util/apdu.dart` is the protocol half of what the platforms hand you. They move
+bytes — `Iso7816.sendCommandRaw` on iOS, `IsoDep.transceive` on Android — and neither of them
+builds an extended-length APDU, says what `6A82` means, or follows a chain.
+
+**A response longer than one frame is silently truncated.** A card answering `61xx` is saying
+"here is the first frame, ask again for the rest", and neither CoreNFC nor
+`android.nfc.tech.IsoDep` asks. Code that does not know to loop keeps the first frame and the
+status word, and never learns the answer was cut in half. `6Cxx` is the mirror image: the card
+rejected the Le it was sent, named the length it wants, and ran nothing at all.
+
+```dart
+import 'package:nfc_util/apdu.dart';
+import 'package:nfc_util/ios.dart' as ios;
+
+final card = ios.Iso7816.from(tag)!;
+final response = await Iso7816Chaining(card.sendCommandRaw).sendCommand(
+  CommandApdu(
+    instructionClass: 0x00,
+    instructionCode: 0xA4,          // SELECT
+    p1Parameter: 0x04,
+    p2Parameter: 0x00,
+    data: applicationId,
+    expectedResponseLength: 256,
+  ),
+);
+
+switch (response.status) {
+  case StatusWordSuccess():
+    handle(response.payload);       // every frame of it, concatenated
+  case StatusWordError(reason: StatusWordErrorReason.fileNotFound):
+    report('no applet with that AID');
+  case final other:
+    report('card answered ${other.value.toRadixString(16)}');
+}
+```
+
+`Iso7816Chaining` takes a function rather than a tag, so the same wrapper works on Android,
+where a transceive hands back the status word still attached and
+`Iso7816ResponseApdu.fromBytes` splits it off:
+
+```dart
+final isoDep = android.IsoDep.from(tag)!;
+final chain = Iso7816Chaining(
+  (command) async => Iso7816ResponseApdu.fromBytes(await isoDep.transceive(command)),
+);
+```
+
+One call follows at most `maxContinuations` continuations — 32 by default, about 8 KB at the
+256 bytes a short Le can ask for — and throws a `StateError` rather than hanging the session
+on an applet that never stops asking. `Iso7816Chaining.sendCommandRaw` is the same loop for a
+caller who assembles their own APDU bytes.
+
+`CommandApdu` encodes all four ISO 7816-4 cases and takes the short form whenever the lengths
+fit it; `forceExtended: true` asks for the extended one outright, which finally gives
+`IsoDep.isExtendedLengthApduSupported` something to act on. `StatusWord` is a sealed hierarchy
+rather than an enum, because the interesting status words carry a number —
+`StatusWordMoreData.remainingBytes`, `StatusWordWrongLength.correctLength`,
+`StatusWordWarning.retryCounter`, the attempts left before a PIN locks — and because a card is
+allowed to answer something this package has never heard of. That arrives as
+`StatusWordUnrecognised` with its bytes intact rather than as a crash, which is what keeps a
+DESFire card's native `91xx` readable.
+
+**Chaining is opt-in, and deliberately not wired into `transceive` or `Iso7816.sendCommand`.**
+Protocols layered on ISO 7816 run continuations of their own: DESFire signals "more frames"
+with its own `AF` status and expects the reader to answer `AF`, and secure messaging wraps
+and unwraps each command and response as a unit. A transport that quietly issued GET RESPONSE
+underneath either would splice bytes into the middle of a frame the layer above is still
+assembling, and corrupt an exchange that was working. Reach for `Iso7816Chaining` where you
+know the card is speaking plain ISO 7816-4.
+
+None of this touches a platform channel, so `CommandApdu` and `StatusWord` are exercised in a
+plain `flutter test` with no device — the same property the NDEF codec has.
 
 ## Background tag reading
 
@@ -563,6 +730,26 @@ nothing behind, but one that succeeds and is never undone leaves the app enrolle
 
 Pick your own AID. `F0010203040506` above is a sample: two apps built from it on one device
 claim the same identifier, and the second registration is refused.
+
+Everything that writes has a matching read, which is how you find out what the device
+actually did with it:
+
+```dart
+if (!await hce.supportsAidPrefixRegistration()) {
+  // A prefix AID would simply fail here, indistinguishably from a malformed one.
+}
+
+await hce.aidsForService(android.CardEmulationCategory.other);   // static and dynamic, together
+await hce.isDefaultServiceForAid('F0010203040506');              // would a reader reach you?
+await hce.isDefaultServiceForCategory(android.CardEmulationCategory.payment);
+```
+
+`categoryAllowsForegroundPreference(category)` says whether `setPreferredService` has any
+effect at all for that category — on a device where the user's wallet choice is final for
+payment, it does not, and the call above would otherwise look like it worked.
+`selectionModeForCategory(category)` reports how the platform picks between apps claiming the
+same AID, as `AidSelectionMode.preferDefault`, `askIfConflict`, `alwaysAsk`, or `unknown` for
+a constant this version does not name.
 
 **This release bridges APDUs only while the Flutter engine is alive.** A tap with the app
 fully stopped is answered with `6D00` rather than queued. Emulating a card while the app is
@@ -673,14 +860,68 @@ whatever was armed before rather than clearing it.
 
 ## Testing
 
-The NDEF layer is pure Dart and fully testable. For session logic, put a fake in place of
-the generated host API — see [`test/session_test.dart`](test/session_test.dart), and
+The NDEF layer and the [ISO 7816-4 layer](#iso-7816-apdus) are pure Dart and fully testable on
+their own. Everything else needs the platform replaced, and
+`package:nfc_util/testing.dart` is what replaces it. That is a hardware necessity rather than
+a convenience: `NFCTagReaderSession` does not start in the Simulator and no emulator has an
+NFC radio, so fakes are the only mechanism by which any CI runs a tag through an app at all.
+
+```dart
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nfc_util/android.dart';
+import 'package:nfc_util/testing.dart';
+
+class _Card extends FakeNfcAndroidHostApi {
+  @override
+  Future<Uint8List> mifareClassicReadBlock(String handle, int blockIndex) async =>
+      Uint8List.fromList(List.filled(16, blockIndex));
+}
+
+void main() {
+  late void Function() restore;
+  setUp(() => restore = debugReplaceApis(android: _Card()));
+  tearDown(() => restore());
+
+  test('reads the block it asked for', () async {
+    final tag = fakeNfcTag(techs: [FakeTech.nfcA(), FakeTech.mifareClassic()]);
+    expect(await MifareClassic.from(tag)!.readBlock(blockIndex: 4), everyElement(4));
+  });
+}
+```
+
+`debugReplaceApis({nfc, android, ios})` puts a fake platform in place and hands back the
+function that puts the real one back. `FakeNfcHostApi`, `FakeNfcAndroidHostApi` and
+`FakeNfcIosHostApi` answer *every* call — availability reads enabled, sessions succeed
+quietly, a read comes back null, and the Android fake stands in for the oldest phone this
+package runs on, so every later capability answers false — which is what lets a test override
+only the calls it asserts on. `fakeNfcTag` builds the tag the platform would have delivered
+out of `FakeTech` entries; it is inert, its handle addresses nothing, and its `techList` is
+derived from the Android technologies given unless you pass one, because a tag carrying a
+technology the platform left off its list is a tag no device would deliver.
+
+**Where the boundary still is.** Every call that answers a plain Dart value — the transceives,
+the Mifare reads, the capability questions — can be overridden with nothing but the import
+above. A call naming a generated class or enum *anywhere in its signature* cannot, and that is
+more than the obvious return types: `ndefRead` and the ISO 7816 exchanges answer one, and
+`resetTech` and the card-emulation queries answer nothing at all but still take one as a
+parameter. Overriding those means importing `package:nfc_util/src/pigeon.g.dart` in the test —
+an implementation import the analyzer flags, and a shape that changes without a major version,
+which is why it is not re-exported here. Say it with a public type where the two are
+interchangeable — a message handed to `FakeTech.ndefAndroid` and read back as
+`Ndef.from(tag)?.cachedMessage`, rather than an overridden `ndefRead` — and where they are
+not, the import is the price.
+
+The package's own tests are worth reading as worked examples:
+[`test/session_test.dart`](test/session_test.dart), and
 [`test/android_platform_test.dart`](test/android_platform_test.dart) /
 [`test/hce_test.dart`](test/hce_test.dart) for the capability probes and the polling-frame
 and event callbacks.
 
-In a widget test with no mock registered, a channel call never completes, so an app should
-treat "availability unknown" as "not ready" rather than assuming a failure will arrive.
+In a widget test with nothing standing in for the platform, a channel call never completes, so
+an app should treat "availability unknown" as "not ready" rather than assuming a failure will
+arrive.
 
 **What no test can cover, and what a physical device is needed for:** host card emulation
 needs a reader and a second device; background reading needs the app closed; Wallet passes

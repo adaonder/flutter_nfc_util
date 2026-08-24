@@ -471,9 +471,10 @@ class _HomePageState extends State<HomePage> {
         });
 
         await _probeAsync('Iso15693', ios.Iso15693.from(tag), (t) async {
-          final info = await t.getSystemInfo(requestFlags: {ios.Iso15693RequestFlag.highDataRate});
+          final info = await t.getSystemInfoAndUid(requestFlags: {ios.Iso15693RequestFlag.highDataRate});
           return 'IC ${t.icManufacturerCode}/${_hex(t.icSerialNumber)}, '
-              '${info.totalBlocks} blocks of ${info.blockSize}';
+              '${info.totalBlocks} blocks of ${info.blockSize}'
+              '${info.uid == null ? '' : ', UID ${_hex(info.uid!)}'}';
         });
 
         await _probeAsync('NdefIos', ios.NdefIos.from(tag), (t) async {

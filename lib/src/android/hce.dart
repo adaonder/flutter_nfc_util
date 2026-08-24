@@ -70,6 +70,36 @@ class PollingFrame {
   String toString() => 'PollingFrame(${type.name}, ${data.length} bytes, gain $vendorSpecificGain)';
 }
 
+/// One of the two buckets Android sorts card-emulation services into,
+/// `CardEmulation.CATEGORY_*`.
+///
+/// [payment] is the wallet bucket, where the user picks one default app in system settings
+/// and the platform treats that choice as theirs to make. Everything else -- transit,
+/// loyalty, access control, a private AID of your own -- is [other], where routing is settled
+/// per AID instead. This plugin registers what [HostCardEmulation.registerAids] is given
+/// under [other].
+enum CardEmulationCategory { payment, other }
+
+/// How the platform picks between apps that claim the same AID,
+/// `CardEmulation.SELECTION_MODE_*`.
+///
+/// This is what decides whether an AID conflict is something an app can settle by making
+/// itself preferred, or something only the user can settle.
+enum AidSelectionMode {
+  /// The category's default service wins outright, and a second claimant is never reached.
+  preferDefault,
+
+  /// The user is asked, but only when the claim is actually contested.
+  askIfConflict,
+
+  /// The user is asked every time, contested or not.
+  alwaysAsk,
+
+  /// A constant this release does not name. Reported rather than folded into one of the
+  /// others, because guessing here means quietly mispredicting where a tap goes.
+  unknown,
+}
+
 /// Host card emulation: the phone answers a reader as if it were a contactless card.
 ///
 /// Android only. Apple's equivalent is gated behind an entitlement that is not generally
@@ -162,6 +192,53 @@ class HostCardEmulation {
   Future<void> setPreferredService(bool preferred) => androidApi.hceSetPreferredService(preferred);
 
   // -------------------------------------------------------------------------------------
+  // What the platform will actually do with a registration. API 19 and 21 throughout, so
+  // below this package's minSdk 24: none of it is version-gated.
+  // -------------------------------------------------------------------------------------
+
+  /// Whether the controller can route an AID *prefix* at all.
+  ///
+  /// Worth asking before registering one, because the failure is otherwise unreadable: on
+  /// hardware that cannot route prefixes, [registerAids] just returns false, with nothing to
+  /// tell that apart from an AID the platform considers malformed. When this is false,
+  /// enumerate the full AIDs instead.
+  Future<bool> supportsAidPrefixRegistration() => androidApi.hceSupportsAidPrefixRegistration();
+
+  /// Whether [setPreferredService] changes anything for [category].
+  ///
+  /// False for [CardEmulationCategory.payment] on a device where the user's wallet choice is
+  /// final. The call still succeeds there and simply has no effect, so an app that assumed
+  /// otherwise sits waiting for a tap that is being routed elsewhere.
+  Future<bool> categoryAllowsForegroundPreference(CardEmulationCategory category) =>
+      androidApi.hceCategoryAllowsForegroundPreference(_categoryToWire(category));
+
+  /// How the platform picks between apps that claim the same AID in [category].
+  ///
+  /// Tells an app whether a conflict is worth trying to win with [setPreferredService] or
+  /// whether the user decides -- see [AidSelectionMode].
+  Future<AidSelectionMode> selectionModeForCategory(CardEmulationCategory category) async =>
+      _selectionModeFromWire(await androidApi.hceSelectionModeForCategory(_categoryToWire(category)));
+
+  /// Whether this app's emulation service is the user's default for [category].
+  Future<bool> isDefaultServiceForCategory(CardEmulationCategory category) =>
+      androidApi.hceIsDefaultServiceForCategory(_categoryToWire(category));
+
+  /// Whether a reader selecting [aid], as uppercase hex, reaches this app's service.
+  ///
+  /// The per-AID answer, and the one that decides a tap: an app can hold an AID without being
+  /// the category default, and be the category default without holding a given AID.
+  Future<bool> isDefaultServiceForAid(String aid) => androidApi.hceIsDefaultServiceForAid(aid);
+
+  /// The AIDs registered against this app's emulation service in [category], as uppercase hex.
+  ///
+  /// The readback for [registerAids] -- pass [CardEmulationCategory.other], which is the
+  /// category this plugin registers under. It reports the AIDs declared in the manifest and
+  /// the ones registered at run time together, because together is what the framework routes
+  /// on; there is no way to ask for one without the other.
+  Future<List<String>> aidsForService(CardEmulationCategory category) =>
+      androidApi.hceAidsForService(_categoryToWire(category));
+
+  // -------------------------------------------------------------------------------------
   // Observe mode. Android 15 (API 35) and above.
   // -------------------------------------------------------------------------------------
 
@@ -240,4 +317,16 @@ class HostCardEmulation {
 
   /// Removes a filter added by [registerPollingLoopPatternFilter].
   Future<bool> removePollingLoopPatternFilter(String pattern) => androidApi.hceRemovePollingLoopPatternFilter(pattern);
+
+  static CardEmulationCategoryPigeon _categoryToWire(CardEmulationCategory category) => switch (category) {
+    CardEmulationCategory.payment => CardEmulationCategoryPigeon.payment,
+    CardEmulationCategory.other => CardEmulationCategoryPigeon.other,
+  };
+
+  static AidSelectionMode _selectionModeFromWire(AidSelectionModePigeon mode) => switch (mode) {
+    AidSelectionModePigeon.preferDefault => AidSelectionMode.preferDefault,
+    AidSelectionModePigeon.askIfConflict => AidSelectionMode.askIfConflict,
+    AidSelectionModePigeon.alwaysAsk => AidSelectionMode.alwaysAsk,
+    AidSelectionModePigeon.unknown => AidSelectionMode.unknown,
+  };
 }

@@ -254,6 +254,43 @@ class NfcUtilPlugin :
     override fun isSecureNfcEnabled(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && adapter?.isSecureNfcEnabled == true
 
+    /**
+     * Wrapped as well as version-gated, unlike the secure-NFC pair above.
+     *
+     * Both reader-option accessors throw `UnsupportedOperationException` on a device with no
+     * `FEATURE_NFC`, so being on API 35 is not on its own enough to make the call safe. A
+     * probe that throws cannot be used as a gate, which is the only thing either of these is
+     * for.
+     */
+    override fun isReaderOptionSupported(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            runCatching { adapter?.isReaderOptionSupported }.getOrNull() == true
+
+    override fun isReaderOptionEnabled(): Boolean {
+        // True where the switch does not exist, for the same reason isTagIntentAllowed is: an
+        // app that reads false as "the user has turned tag reading off" must not be told that
+        // on a device that has no such switch to turn off.
+        if (!isReaderOptionSupported()) return true
+        return runCatching { adapter?.isReaderOptionEnabled }.getOrNull() != false
+    }
+
+    override fun openNfcSettings(): Boolean {
+        val activity = activity ?: return false
+        // Started rather than resolved first, for the reason openTagIntentPreferenceSettings
+        // spells out below. The wireless page is the fallback because a device that publishes
+        // no dedicated NFC screen still has the page the switch sits on, and leaving the user
+        // one tap short beats reporting that there is nowhere to send them.
+        for (action in listOf(Settings.ACTION_NFC_SETTINGS, Settings.ACTION_WIRELESS_SETTINGS)) {
+            try {
+                activity.startActivity(Intent(action))
+                return true
+            } catch (e: ActivityNotFoundException) {
+                Log.w(TAG, "no screen for $action", e)
+            }
+        }
+        return false
+    }
+
     override fun enableReaderMode(
         flags: List<ReaderFlagPigeon>,
         presenceCheckDelayMillis: Long,
@@ -698,6 +735,35 @@ class NfcUtilPlugin :
         }
     }
 
+    /**
+     * Drops the connection and opens it again, which reselects the tag in the RF field.
+     *
+     * A Mifare Classic authentication with the wrong key halts the tag, while `isConnected`
+     * is a local flag that carries on reading true, so every command after it fails as well
+     * and nothing short of ending the session clears it. That makes trying candidate keys
+     * against a sector impossible, which is what this exists for.
+     *
+     * The close is queued on [ioExecutor] ahead of the connect, and that ordering is what
+     * makes this a reset rather than a no-op: [connectTech] hands back a live connection of
+     * the same class untouched, so the close has to have already run by the time it looks.
+     * The executor is single-threaded, so it has. Reconnecting is the whole operation, hence
+     * the empty bodies below.
+     */
+    override fun resetTech(handle: String, tech: AndroidTechPigeon, callback: (Result<Unit>) -> Unit) {
+        val tag = tags[handle]
+            ?: return callback(failure(AndroidErrorCodePigeon.INVALID_PARAMETER, "Tag is not found."))
+        closeConnectedTech(onlyFor = tag)
+        when (tech) {
+            AndroidTechPigeon.NFC_A -> withTech(handle, NfcA::get, callback) {}
+            AndroidTechPigeon.NFC_B -> withTech(handle, NfcB::get, callback) {}
+            AndroidTechPigeon.NFC_F -> withTech(handle, NfcF::get, callback) {}
+            AndroidTechPigeon.NFC_V -> withTech(handle, NfcV::get, callback) {}
+            AndroidTechPigeon.ISO_DEP -> withTech(handle, IsoDep::get, callback) {}
+            AndroidTechPigeon.MIFARE_CLASSIC -> withTech(handle, MifareClassic::get, callback) {}
+            AndroidTechPigeon.MIFARE_ULTRALIGHT -> withTech(handle, MifareUltralight::get, callback) {}
+        }
+    }
+
     override fun mifareClassicAuthenticateSector(
         handle: String,
         sectorIndex: Long,
@@ -903,6 +969,56 @@ class NfcUtilPlugin :
                 emulation.unsetPreferredService(activity)
             }
         }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // NfcAndroidHostApi -- what the platform will do with a registration
+    //
+    // API 19 and 21 throughout, so below this package's minSdk 24: nothing here is
+    // version-gated, and a version check would only be dead code that reads as a real one.
+    // ---------------------------------------------------------------------------------
+
+    override fun hceSupportsAidPrefixRegistration(): Boolean =
+        cardEmulationQuery(false) { emulation, _ -> emulation.supportsAidPrefixRegistration() }
+
+    override fun hceCategoryAllowsForegroundPreference(category: CardEmulationCategoryPigeon): Boolean =
+        cardEmulationQuery(false) { emulation, _ ->
+            emulation.categoryAllowsForegroundPreference(categoryName(category))
+        }
+
+    override fun hceSelectionModeForCategory(category: CardEmulationCategoryPigeon): AidSelectionModePigeon =
+        cardEmulationQuery(AidSelectionModePigeon.UNKNOWN) { emulation, _ ->
+            aidSelectionMode(emulation.getSelectionModeForCategory(categoryName(category)))
+        }
+
+    override fun hceIsDefaultServiceForCategory(category: CardEmulationCategoryPigeon): Boolean =
+        cardEmulationQuery(false) { emulation, component ->
+            emulation.isDefaultServiceForCategory(component, categoryName(category))
+        }
+
+    override fun hceIsDefaultServiceForAid(aid: String): Boolean =
+        cardEmulationQuery(false) { emulation, component -> emulation.isDefaultServiceForAid(component, aid) }
+
+    override fun hceAidsForService(category: CardEmulationCategoryPigeon): List<String> =
+        cardEmulationQuery(emptyList<String>()) { emulation, component ->
+            // The framework answers null for a service it holds no registration for at all,
+            // which as a readback says the same thing as an empty list rather than reporting a
+            // failure -- the app asked which AIDs are routed here, and the answer is none.
+            emulation.getAidsForService(component, categoryName(category)).orEmpty()
+        }
+
+    /**
+     * The synchronous counterpart to [withCardEmulation], for the calls that only ask.
+     *
+     * Answers [ifUnavailable] instead of throwing when there is no adapter to ask, no context
+     * to name the service with, or a controller that refuses the question. Every one of these
+     * exists to be checked before attempting something, and a gate that throws has to be
+     * wrapped at every call site before it can be used as one.
+     */
+    private fun <T> cardEmulationQuery(ifUnavailable: T, body: (CardEmulation, ComponentName) -> T): T {
+        val emulation = cardEmulation() ?: return ifUnavailable
+        val component = apduServiceComponent() ?: return ifUnavailable
+        return runCatching { body(emulation, component) }.getOrDefault(ifUnavailable)
     }
 
     // ---------------------------------------------------------------------------------
@@ -1271,4 +1387,31 @@ private fun wireName(code: AndroidErrorCodePigeon): String = when (code) {
     AndroidErrorCodePigeon.ADAPTER_DISABLED -> "adapterDisabled"
     AndroidErrorCodePigeon.INVALID_PARAMETER -> "invalidParameter"
     AndroidErrorCodePigeon.UNKNOWN -> "unknown"
+}
+
+/**
+ * The platform category string for a wire category.
+ *
+ * Exhaustive, so a third category added to the wire enum fails the build here rather than
+ * quietly ending up routed as CATEGORY_OTHER.
+ */
+private fun categoryName(category: CardEmulationCategoryPigeon): String = when (category) {
+    CardEmulationCategoryPigeon.PAYMENT -> CardEmulation.CATEGORY_PAYMENT
+    CardEmulationCategoryPigeon.OTHER -> CardEmulation.CATEGORY_OTHER
+}
+
+/**
+ * The wire selection mode for a `CardEmulation.SELECTION_MODE_*` constant.
+ *
+ * Matched against the named constants rather than the numbers, which here is not pedantry:
+ * the platform numbers ALWAYS_ASK 1 and ASK_IF_CONFLICT 2, while the wire enum orders those
+ * two the other way round, so anything leaning on the ordinal would report the opposite of
+ * what the device said. [AidSelectionModePigeon.UNKNOWN] catches a fourth constant a later
+ * platform adds, so a mode this build has never heard of is a value rather than a crash.
+ */
+private fun aidSelectionMode(raw: Int): AidSelectionModePigeon = when (raw) {
+    CardEmulation.SELECTION_MODE_PREFER_DEFAULT -> AidSelectionModePigeon.PREFER_DEFAULT
+    CardEmulation.SELECTION_MODE_ASK_IF_CONFLICT -> AidSelectionModePigeon.ASK_IF_CONFLICT
+    CardEmulation.SELECTION_MODE_ALWAYS_ASK -> AidSelectionModePigeon.ALWAYS_ASK
+    else -> AidSelectionModePigeon.UNKNOWN
 }

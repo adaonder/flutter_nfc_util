@@ -23,10 +23,28 @@ import 'message.dart';
 class Ndef {
   const Ndef._(this._handle, {required this.isWritable, required this.maxSize, required this.cachedMessage});
 
+  /// Builds an instance for a tag whose NDEF probe was skipped. iOS only.
+  ///
+  /// A session started with `skipNdefCheck: true` never runs the `queryNDEFStatus` and
+  /// `readNDEF` round trips, so [from] has nothing to build from and answers null -- even
+  /// though reading and writing address the tag by handle and would work perfectly well.
+  /// That gap is what this closes: the sequence Apple documents for a protected tag,
+  /// authenticate first and only then touch NDEF, cannot be expressed any other way.
+  ///
+  /// [isWritable], [maxSize] and [cachedMessage] read false, zero and null. Those are not
+  /// answers -- nothing asked the tag -- so treat them as unknown, and ask
+  /// `NfcUtilIos.instance.ndefQueryStatus(tag.handle)` when the real status matters.
+  ///
+  /// Not for Android. There `skipNdefCheck` makes the platform leave the Ndef technology off
+  /// the tag altogether, so [read] and [write] would fail with `unsupported_tech` rather
+  /// than working -- and that has not been checked on a device, which is the other reason
+  /// this stays an iOS-only escape hatch.
+  Ndef.uncheckedIos(NfcTag tag) : _handle = tag.handle, isWritable = false, maxSize = 0, cachedMessage = null;
+
   /// Returns an instance for [tag], or null when the tag does not hold NDEF.
   ///
   /// Also null when the session set `skipNdefCheck`, which skips the probe that fills this
-  /// in.
+  /// in; [Ndef.uncheckedIos] is the way through on iOS when that is deliberate.
   static Ndef? from(NfcTag tag) {
     final android = tag.data.ndefAndroid;
     if (android != null) {

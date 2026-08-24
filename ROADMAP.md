@@ -17,6 +17,16 @@ The rule that decides which release something lands in:
 Current floors: `compileSdk 36`, `minSdk 24`, iOS deployment target 15.6, Flutter 3.44,
 AGP 8.13.2. `minSdk` and the iOS deployment target are **not** planned to move.
 
+**There are two axes here, and this file only ever had one.** Until 3.3.0 everything below
+came from an SDK *version diff* — what did Android 16.1 add, what did iOS 26.4 add. That
+reading is blind by construction to surface that has been public for years and was simply
+never taken, because nothing about it is new. The 3.3.0 audit found the larger of its two
+severe gaps on that blind axis: thirteen `NFCISO15693Tag` methods available since iOS 14,
+and the whole query half of `CardEmulation` available since API 19. Neither would ever have
+appeared in a version diff. [Reachable at the current floor, and never
+taken](#reachable-at-the-current-floor-and-never-taken) is the section for that axis; keep
+both sweeps running, they do not find the same things.
+
 ---
 
 ## Verification of the current release
@@ -84,6 +94,31 @@ what verifies the whole capability contract on real hardware rather than against
 | The Android 16 tag-scan allowlist prompt, and a web-link tag going to `ACTION_VIEW` | needs a written tag and a user decision |
 | Launch from a force-stopped app on Android 17 | needs a tag tap after `am force-stop` |
 | iOS 15.6: probes answer `false`/`null` without crashing | no iOS 15.6 device to hand |
+
+**Added by 3.3.0, and owed a measurement.** All of it compiles and passes the ten test
+layers; none of it has touched a card:
+
+| What | What it needs |
+|---|---|
+| The ISO 15693 security commands (`authenticate`, `keyUpdate`, `challenge`, `readBuffer`) and `sendRequest` | a tag implementing ISO/IEC 29167 |
+| `Iso15693.readMultipleBlocksWithConfiguration` / `customCommandWithConfiguration` | the header says CoreNFC answers `unsupportedFeature` for these on a tag from an `NFCTagReaderSession` without `com.apple.developer.nfc.readersession.iso15693.tag-identifiers`; that is the expected common outcome and has not been confirmed |
+| `splitBlocks` even-division path in `readMultipleBlocksWithConfiguration` | CoreNFC returns one concatenated `Data` here, unlike every other read-multiple call; the uneven case falls back to one undivided element rather than slicing at a guess |
+| `MifareClassic.reset()` | a Mifare Classic card and a deliberately wrong key, to confirm the halted-tag recovery it exists for |
+| `NfcTag.otherTagCount` | two cards in the field at once |
+| The `CardEmulation` query half | a reader, and a second app claiming the same AID for the conflict cases |
+| `NfcUtilIos.tagIsAvailable` | a tag taken out of the field mid-session |
+| `Ndef.uncheckedIos` | a `skipNdefCheck` session against a real NDEF tag |
+
+One measurement is worth more than the rest, because six decisions rest on it:
+**is `MiFare.sendMiFareCommand` a general raw-frame escape hatch on iOS?** The audit assumed
+it was and classified NTAG21x `PWD_AUTH`, `GET_VERSION`, `READ_SIG`, Ultralight C 3DES and
+the Ultralight command layer as reachable today because of it. `NFCMiFareTag.h` does not
+support that reading: it names three NXP families, not any ISO 14443-3A tag, and it inserts
+CRC and handles chaining internally, so it is not a raw transceive. Run it against (i) a
+non-NXP Type 2 tag that CoreNFC reports as `MiFareFamily.unknown` and (ii) a plain NTAG213
+`READ` (`30 04`), then either document the escape hatch honestly on the `MiFare` class or
+reopen those six decisions — in which case their iOS halves are *unreachable*, not
+app-level.
 
 ---
 
@@ -186,27 +221,13 @@ phone. Only the *compile-time* SDK moves.
 
 ## Maintenance, not features
 
-Three things reading the SDKs turned up that are not "a newer OS added something" — they are
-about code that already ships, or surface that has been reachable for years and was never
-taken.
+Two things reading the SDKs turned up that are not "a newer OS added something" — they are
+about code that already ships.
 
-### `Iso15693.getSystemInfo()` calls a selector Apple deprecated in iOS 14
-
-`NfcUtilPlugin.swift` calls `tag.getSystemInfo(requestFlags:)`, which `CoreNFC.apinotes` maps
-to `getSystemInfoWithRequestFlag:completionHandler:` — marked
-`API_DEPRECATED_WITH_REPLACEMENT("getSystemInfoAndUIDWithRequestFlag:completionHandler:", ios(13.0, 14.0))`
-in `NFCISO15693Tag.h`. The replacement is available well below this package's 15.6 floor, so
-**no floor moves** and this could be a minor release.
-
-It is not a rename, though, which is why it has not been done casually:
-
-* the apinotes mark the replacement `SwiftPrivate: true`, so from Swift it surfaces as
-  `__getSystemInfoAndUID(...)` rather than as an idiomatic method;
-* it returns the tag UID in addition to the five values the current call yields, which means
-  a new field on `Iso15693SystemInfoPigeon` and on the public `Iso15693SystemInfo`.
-
-Adding a field to a Pigeon *class* is additive and safe — unlike an enum value — so the only
-real cost is the `SwiftPrivate` awkwardness. Worth doing before Apple removes the old one.
+*(The third, `Iso15693.getSystemInfo()` calling a selector Apple deprecated in iOS 14,
+shipped in 3.3.0: `getSystemInfoAndUid()` replaces it and returns the UID, and the old one
+is deprecated rather than removed. The `SwiftPrivate` awkwardness the entry predicted was
+real — the Swift name is `__getSystemInfoAndUID(with:)`.)*
 
 ### FeliCa card emulation has never been exposed
 
@@ -228,6 +249,52 @@ another app instead of leaving the reader waiting. Today the plugin answers `6D0
 situation, which is a valid card response but tells the *system* nothing. A small, contained
 improvement to the existing emulation path.
 
+## Reachable at the current floor, and never taken
+
+The axis a version diff cannot see. Everything here compiles against today's `compileSdk`
+and today's deployment target — the only reason it is not in the package is that nobody
+looked for it.
+
+**3.3.0 took the two that mattered.** The rest of `NFCISO15693Tag` (iOS 14, thirteen
+methods, and `customCommand` was never an escape hatch for them because CoreNFC caps it at
+command codes `A0`–`DF`), and the query half of `CardEmulation` (API 19–21, below `minSdk`).
+Also `NfcAdapter.isReaderOption*`, `Settings.ACTION_NFC_SETTINGS`, the `MifareClassic`
+constants, `NFCTag.isAvailable`, and the ISO 7816-4 chaining every consumer was writing by
+hand.
+
+**Still on this axis, and not yet decided:**
+
+| API | Since | Note |
+|---|---|---|
+| `NfcAdapter.ignore(Tag, int, OnTagRemovedListener, Handler)` | API 24 — exactly `minSdk` | The only tag-*removed* signal the platform offers. Today the package can only learn a tag is gone by poking it and catching `TAG_LOST`. Two things must be documented or it reads as broken: after `ignore()` every call on that tag throws `IOException` (so the handle must be destroyed with it), and randomised-UID tags — most modern DESFire and EMV — cannot be debounced reliably. **Measure first:** how it interacts with an active reader-mode session is not settled by the SDK docs, and this file's own rule says measure rather than assume. |
+| `NfcAdapter.enableForegroundDispatch` filters and tech lists | API 10 | The plugin passes `null, null`, which is the documented wildcard and is what the API promises today. The only thing wildcards cannot express is a MIME type chosen at run time. Do the narrow version — one optional `List<String> mimeTypes` — or decide against it and move this row to *Out of scope*, so it stops looking overlooked. The full `IntentFilter` / `String[][]` model should not be done: `setDiscoveryTechnology` already answers the tech-list half. |
+| `HostApduService.onDeactivated`'s reason constant | API 19 | Surfaced as a bare `int` — the package's only untyped platform constant, against `NfcAdapterState`, `NfcAndroidErrorCode`, `PollingFrameType` and the rest, which are all typed. The enum itself is minor-safe; **changing the callback's signature is source-breaking**, so it is either a major or a second typed callback plus a deprecation. |
+| `ACTION_TRANSACTION_DETECTED` | API 28 | Off-host secure-element transaction events. Do **not** ship alone: it adds an `NfcEventKind` value, and so does API 36.1's `NfcEventCallback.onOffHostAidSelected` — the selection and completion halves of the same story. They ride the same major or neither does. Delivery is the real problem: the app is by definition not running, so a runtime receiver is useless and a manifest receiver merges `NFC_TRANSACTION_EVENT` into every consuming app. |
+
+---
+
+## The NDEF and spec layer
+
+This file had no place for these, which is itself the point: every section above is a
+platform API, while the package's most distinctive component — a ~790-line pure-Dart NDEF
+codec that works with no tag present — lives in a layer the roadmap never modelled.
+
+Nothing here needs a Pigeon, Kotlin or Swift change, and all of it is testable without a
+device.
+
+| Item | Note |
+|---|---|
+| **Connection Handover** (`Hr`/`Hs`/`Hm`/`Hi`, `ac`, `cr`, `err`) | The strongest candidate. A handover tag today decodes as an opaque `MimeRecord`. The nested-message pattern is already proven in `SmartPosterRecord.from`, and the record ID field that `ac` needs to resolve its carrier reference already survives end to end. **Split it:** decode first, encode second. The value `from()` adds that a caller cannot write themselves is resolving each Alternative Carrier's reference against its siblings' `identifier`. **Stop at the envelope** — WSC TLV and BT/BLE OOB EIR are Bluetooth SIG and Wi-Fi Alliance formats, not NFC Forum, and owning two foreign versioned registries does not belong in a package whose only dependency is `meta`. |
+| The negotiated half (`HandoverRequest`, `AlternativeCarrier`, `CollisionResolution`) | Do **not** defer this as "peer-to-peer is dead". ISO/IEC 18013-5 mDL is exactly the peer: the reader app is the Handover Requester, the holder answers with a Handover Select, and the whole negotiation completes between two ordinary apps over ISO-DEP / Type 4 with no OS flow involved. Same signal reverses the default for Type 4 emulation below. |
+| **Type 4 Tag emulation over HCE** | The package owns both halves and joins neither: the APDU pipe in `hce.dart`, the encoder in `NdefMessage.toBytes()`. An app can already do this from Dart — the real prize is different: a Type 4 emulator knows its bytes at *registration* time, so a native state machine (CC file `E103`, NDEF file `E104`, SELECT / READ BINARY / UPDATE BINARY) checked *before* the bridge dispatch answers correctly **with the app fully stopped**. That makes it **not** a duplicate of the background-engine row in *Out of scope* — it is the case that sidesteps it. `UPDATE BINARY` must be a first-class writable mode, not an opt-in afterthought, because negotiated handover requires the reader to write. |
+| **Signature RTD** (`Sig`) | Parse only, and there is a blocker to clear first: `Sig` covers the *on-the-wire* encoding of the preceding records, but this package does not keep the original bytes. `NdefMessage.fromBytes` rebuilds from parts, `toBytes` always emits the short-record form under 256 bytes and never chunks, while `fromBytes` coalesces chunked records — so a re-encode can differ byte for byte from what was signed. Fix that (keep per-record source offsets, or require the caller to hand over the raw bytes) before anything else. Verification needs X.509/ECDSA and a **trust-store policy**, which is the app's decision, not a transport's. |
+| **Device Information RTD** (`Di`) | Small, but useless alone — its role is to accompany a handover message. Ship with Connection Handover or not at all. |
+| **TNEP 1.0** | Named NFC Forum spec, no native work. The library-shaped part is only a ~200-line `Tp`/`Te` codec; the poller loop is close to write-wait-read. Do not build it speculatively. If it is built, ship the record codec first and tie the poller to a real request, measuring it against the iOS session timeout with an actual tag. |
+| `SmartCard.from(tag)` | The cross-platform peer to `Ndef.from(tag)`, normalising Android `IsoDep` and iOS `Iso7816`. Honestly a convenience — but so is `Ndef.from`, and the package chose to own that, so refusing here would be an inconsistency rather than a principle. Keep it to APDU exchange only; `timeout`, `isExtendedLengthApduSupported` and `initialSelectedAID` are single-platform and stay one import away. 3.3.0's `package:nfc_util/apdu.dart` is the transport it would wrap. |
+| `package:nfc_util/testing.dart`'s remaining boundary | A host call naming a generated class **or enum anywhere in its signature** still cannot be overridden without importing `package:nfc_util/src/pigeon.g.dart`. `resetTech` and the six card-emulation queries answer nothing and are still affected, via their parameters. Re-exporting `AndroidTechPigeon` and `CardEmulationCategoryPigeon` would close most of it — but it would also make a generated shape public API permanently, which is the exact promise `TagPigeon`'s `@internal` makes. Deliberately not done; revisit only with a concrete need. |
+
+---
+
 ## Public enum additions
 
 Adding a value to a public Dart enum is source-breaking against an exhaustive `switch`, so
@@ -237,8 +304,16 @@ each of these forces a major on its own, regardless of which SDK it needs:
 * `SessionKindPigeon` → a `payment` case, so `onError` and `onSessionBecameActive` stay
   unambiguous once a third iOS session exists
 * `NfcEventKind.offHostAidSelected`
+* `Iso15693RequestFlag.commandSpecificBit8` — `NFCISO15693RequestFlagCommandSpecificBit8`,
+  bit 7, added in iOS 14. Noticed while bridging the rest of `NFCISO15693Tag` for 3.3.0 and
+  deliberately left out: the public enum mirrors the other six exactly, and adding the
+  seventh is source-breaking. Not urgent, because `sendRequest` takes the flag byte as a raw
+  `int` and can already set it.
 * possibly a typed `unsupportedApiLevel` on `NfcAndroidErrorCode`, replacing the string code
   3.2.0 throws
+* possibly a typed `HceDeactivationReason`, replacing the bare `int` — see [Reachable at the
+  current floor](#reachable-at-the-current-floor-and-never-taken); the enum is minor-safe,
+  the signature change is not
 
 ## Migration notes to write
 
@@ -262,7 +337,15 @@ These are not "later" — they are things this package should not try to expose.
 | `CardEmulation.PROTOCOL_AND_TECHNOLOGY_ROUTE_*`, `NfcAdapter.getGestureExchangeAid()` | Routing-table and wallet-role surface, meaningful only to a default-wallet app. |
 | `NfcOemExtension` | A `@SystemApi`: absent from the public `android.jar` at every level, including 37, so it cannot be named from an app at any `compileSdk`. |
 | iOS `NFCCardSession`, Apple's NFC & SE Platform (HCE, credential provisioning, presentment intent assertion) | Behind a signed Apple agreement and an entitlement granted per organisation, not obtainable by a general-purpose package. Regions and use cases keep expanding — MultiSSD in iOS 26.2, government ID in 26.4 — but the gate does not. |
-| A background Flutter engine for host card emulation | A real gap, and a large one: today APDUs are bridged only while the engine is alive, and a tap with the app fully stopped answers `6D00`. It is an architectural change to the plugin rather than a platform-version question, so it is tracked separately from this file's release rule. |
+| A background Flutter engine for host card emulation | A real gap, and a large one: today APDUs are bridged only while the engine is alive, and a tap with the app fully stopped answers `6D00`. It is an architectural change to the plugin rather than a platform-version question, so it is tracked separately from this file's release rule. Note that Type 4 NDEF emulation is **not** this item — see [The NDEF and spec layer](#the-ndef-and-spec-layer). |
+| `android.se.omapi` | The contacted smart-card interface; the NFC controller is not involved at all. APDU access is gated by GlobalPlatform SE Access Control, keyed to the calling app's signing certificate — an entitlement in all but name, issued by the SIM or eSE owner instead of by Apple. Same reasoning as the row above it. |
+| Topaz / Jewel (NFC Forum Type 1) product commands | A platform limit, not an oversight, and confirmed from both primary sources: `android.jar` at API 37 has ten classes under `android/nfc/tech/` and none of them is Type 1, and `NFCPollingOption` is exactly ISO14443 / ISO15693 / ISO18092 / PACE. Recorded here because its absence is otherwise invisible. |
+| EMV contactless card reading (PAN, expiry, Track 2) | Disqualified twice over. Apple excludes payment AIDs from `select-identifiers`, so the feature would be structurally Android-only and would break the package's cross-platform contract — the same reasoning that retires `NFCCardSession` above. And making PAN extraction a first-class API pushes PCI-DSS scope and app-review exposure onto users who never asked for it. |
+| The mdoc / ISO 18013-5 stack itself | CBOR/COSE session encryption, device retrieval, issuer-signed document verification: an application-domain stack, like eMRTD and EMV. This package supplies the engagement transport and, if it lands, the handover codec; the mdoc part is the app's. |
+| PC/SC desktop readers (Windows / macOS / Linux), CCID, WebUSB | The object model does not survive the move: PC/SC has no session, no alert sheet, no polling option, no HCE, no adapter state and no background tag delivery, so roughly half of a ~9,100-line public surface would throw `unsupported` on three new platforms. A sibling package, never a seventh library here. Point at `dart_pcsc` / `ccid` from the README instead. |
+| Web NFC (W3C `NDEFReader`) | Chromium-on-Android only, still Experimental, no Safari or Firefox commitment, and NDEF-only by design. There is also a structural cost: `lib/src/api.dart` holds three concrete Pigeon host objects as top-level variables and every tag class calls them directly — there is no platform-interface indirection, and a federated `nfc_util_web` would need that split first. Revisit if a second browser engine ships `NDEFReader`; then it is an endorsed `nfc_util_web`, never a partial web branch inside this plugin. |
+| `CardEmulation` preferred-payment trio, `ACTION_CHANGE_DEFAULT` | Wallet-role surface, and the trio would merge `NFC_PREFERRED_PAYMENT_INFO` into every consuming app's manifest — the same fight over `android.hardware.nfc` that 3.2.0 had to fix. `ACTION_CHANGE_DEFAULT` is deprecated as of API 35. |
+| Vendor product command layers: NTAG 424 DNA SUN/SDM, NTAG 21x `PWD_AUTH`, DESFire authentication, Ultralight C 3DES, ICODE SLIX passwords, FeliCa Lite-S MAC, ST25 | Transport for all of these is already complete; what they add is cryptography and per-product memory maps. Each would force `pointycastle` onto every consumer that only reads NDEF, and a config-page writer that guesses a tag's variant can brick it — a wrong offset hits a lock or OTP page irreversibly. Companion packages if demand is shown. Accepting a second vendor's map after NXP would turn a bounded package into an open-ended vendor-table commitment. **Conditional:** the iOS half of this row depends on the `sendMiFareCommand` measurement in [the hardware matrix](#2-the-hardware-matrix). |
 
 ---
 

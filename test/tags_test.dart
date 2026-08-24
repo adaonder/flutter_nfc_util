@@ -6,6 +6,7 @@ import 'package:nfc_util/ios.dart';
 import 'package:nfc_util/ndef.dart';
 import 'package:nfc_util/nfc_util.dart';
 import 'package:nfc_util/src/pigeon.g.dart';
+import 'package:nfc_util/testing.dart';
 
 Uint8List bytes(List<int> values) => Uint8List.fromList(values);
 
@@ -56,6 +57,20 @@ void main() {
 
     test('reports an empty technology list rather than null on iOS', () {
       expect(tagWith().techList, isEmpty);
+    });
+
+    test('counts the other tags CoreNFC saw beside this one', () {
+      // Above zero means the phone was held over several cards and this is whichever one
+      // CoreNFC listed first, which is not deterministic. Before 3.3.0 the rest were dropped
+      // with nothing said, so an app could not tell that tap apart from a clean one.
+      expect(fakeNfcTag(techs: [FakeTech.iso7816()], otherTagCount: 2).otherTagCount, 2);
+    });
+
+    test('zero is the ordinary single-card tap, and null is Android saying nothing', () {
+      // The two have to stay distinguishable: Android's reader mode delivers one tag per
+      // callback and never counts, so folding null into zero would claim it had.
+      expect(fakeNfcTag(techs: [FakeTech.ndefIos()], otherTagCount: 0).otherTagCount, 0);
+      expect(fakeNfcTag(techs: [FakeTech.nfcA(), FakeTech.ndefAndroid()]).otherTagCount, isNull);
     });
   });
 

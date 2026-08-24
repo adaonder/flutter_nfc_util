@@ -56,6 +56,30 @@ enum TagMapper {
     return result
   }
 
+  /// Decomposes the 8-bit response flag the ISO 15693 security commands answer with.
+  ///
+  /// `NFCISO15693ResponseFlag` is a bitmask, so there is no case to switch over on the
+  /// CoreNFC side; the loop runs over the wire enum instead and asks after one bit at a
+  /// time. That is what keeps the switch exhaustive: a flag added to the wire enum stops
+  /// the build here rather than quietly never being reported.
+  static func responseFlags(_ flags: NFCISO15693ResponseFlag) -> [Iso15693ResponseFlagPigeon] {
+    var result: [Iso15693ResponseFlagPigeon] = []
+    for flag in Iso15693ResponseFlagPigeon.allCases {
+      let bit: NFCISO15693ResponseFlag
+      switch flag {
+      case .error: bit = .error
+      case .responseBufferValid: bit = .responseBufferValid
+      case .finalResponse: bit = .finalResponse
+      case .protocolExtension: bit = .protocolExtension
+      case .blockSecurityStatusBit5: bit = .blockSecurityStatusBit5
+      case .blockSecurityStatusBit6: bit = .blockSecurityStatusBit6
+      case .waitTimeExtension: bit = .waitTimeExtension
+      }
+      if flags.contains(bit) { result.append(flag) }
+    }
+    return result
+  }
+
   // -------------------------------------------------------------------------------------
   // Errors
   // -------------------------------------------------------------------------------------
@@ -197,13 +221,19 @@ enum TagMapper {
   /// The NDEF probe is two round trips over the air before the app hears about the tag, and
   /// a tag holding a large message makes the second one slow. `skipNdef` is pure profit for
   /// an app that only sends APDUs.
+  ///
+  /// `otherTagCount` is how many tags the same detection reported besides this one. It is a
+  /// parameter rather than something read off the tag because only the session knows it, and
+  /// the count is the app's one chance to notice that it just read whichever of two cards
+  /// CoreNFC happened to hand over first.
   static func tagToWire(
     _ tag: NFCTag,
     handle: String,
+    otherTagCount: Int,
     skipNdef: Bool,
     completion: @escaping (TagPigeon) -> Void
   ) {
-    var wire = TagPigeon(handle: handle)
+    var wire = TagPigeon(handle: handle, otherTagCount: Int64(otherTagCount))
 
     switch tag {
     case .feliCa(let felica):

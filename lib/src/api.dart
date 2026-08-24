@@ -1,5 +1,3 @@
-import 'package:meta/meta.dart';
-
 import 'pigeon.g.dart';
 
 // The generated host API objects are stateless wrappers around a channel name, so one of
@@ -23,10 +21,15 @@ NfcIosHostApi iosApi = NfcIosHostApi();
 ///
 /// ```dart
 /// late void Function() restore;
-/// setUp(() => restore = debugReplaceApis(nfc: FakeHost()));
+/// setUp(() => restore = debugReplaceApis(nfc: FakeNfcHostApi()));
 /// tearDown(() => restore());
 /// ```
-@visibleForTesting
+///
+/// Deliberately not `@visibleForTesting`. That annotation confines a member to files the
+/// analyzer recognises as tests, and this one also has to be reachable from an
+/// `integration_test/` directory and from the shared fixtures a package keeps under `lib/` --
+/// both of which would be errors under it. `package:nfc_util/testing.dart` is the boundary
+/// instead, and it says in its own documentation what it is for.
 void Function() debugReplaceApis({NfcHostApi? nfc, NfcAndroidHostApi? android, NfcIosHostApi? ios}) {
   final previousNfc = nfcApi;
   final previousAndroid = androidApi;

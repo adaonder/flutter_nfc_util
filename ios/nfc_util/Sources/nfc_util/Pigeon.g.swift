@@ -296,6 +296,23 @@ enum AndroidTechPigeon: Int, CaseIterable {
   case mifareUltralight = 6
 }
 
+/// `CardEmulation.CATEGORY_*`. Android only.
+enum CardEmulationCategoryPigeon: Int, CaseIterable {
+  case payment = 0
+  case other = 1
+}
+
+/// `CardEmulation.SELECTION_MODE_*`. Android only.
+///
+/// [unknown] covers a constant this version does not name, so a future platform value
+/// cannot turn into a crash.
+enum AidSelectionModePigeon: Int, CaseIterable {
+  case preferDefault = 0
+  case askIfConflict = 1
+  case alwaysAsk = 2
+  case unknown = 3
+}
+
 /// NDEF Type-Name-Format, as defined by the NFC Forum. Ordinals match the on-tag values
 /// 0x00..0x06.
 enum TypeNameFormatPigeon: Int, CaseIterable {
@@ -347,6 +364,21 @@ enum Iso15693RequestFlagPigeon: Int, CaseIterable {
   case option = 3
   case protocolExtension = 4
   case select = 5
+}
+
+/// `NFCISO15693ResponseFlag`. iOS only.
+///
+/// Reported by the four ISO 15693 commands that hand back the tag's 8-bit response flag
+/// rather than swallowing it: authenticate, key update, read buffer, and the general
+/// [NfcIosHostApi.iso15693SendRequest].
+enum Iso15693ResponseFlagPigeon: Int, CaseIterable {
+  case error = 0
+  case responseBufferValid = 1
+  case finalResponse = 2
+  case protocolExtension = 3
+  case blockSecurityStatusBit5 = 4
+  case blockSecurityStatusBit6 = 5
+  case waitTimeExtension = 6
 }
 
 enum FeliCaPollingRequestCodePigeon: Int, CaseIterable {
@@ -1588,6 +1620,13 @@ struct TagPigeon: Hashable, CustomStringConvertible {
   var mifareClassic: MifareClassicPigeon? = nil
   var mifareUltralight: MifareUltralightPigeon? = nil
   var nfcBarcode: NfcBarcodePigeon? = nil
+  /// How many *other* tags CoreNFC reported in the same detection. iOS only; null on
+  /// Android, where reader mode delivers one tag per callback.
+  ///
+  /// The session addresses one tag at a time, so anything above zero means a tap the app
+  /// should probably ask the user to repeat with one card. Before 3.3.0 the extra tags were
+  /// dropped with no signal at all, so which card answered was not deterministic.
+  var otherTagCount: Int64? = nil
   var ndefIos: NdefIosPigeon? = nil
   var felica: FeliCaPigeon? = nil
   var iso7816: Iso7816Pigeon? = nil
@@ -1610,11 +1649,12 @@ struct TagPigeon: Hashable, CustomStringConvertible {
     let mifareClassic: MifareClassicPigeon? = nilOrValue(pigeonVar_list[10])
     let mifareUltralight: MifareUltralightPigeon? = nilOrValue(pigeonVar_list[11])
     let nfcBarcode: NfcBarcodePigeon? = nilOrValue(pigeonVar_list[12])
-    let ndefIos: NdefIosPigeon? = nilOrValue(pigeonVar_list[13])
-    let felica: FeliCaPigeon? = nilOrValue(pigeonVar_list[14])
-    let iso7816: Iso7816Pigeon? = nilOrValue(pigeonVar_list[15])
-    let iso15693: Iso15693Pigeon? = nilOrValue(pigeonVar_list[16])
-    let mifare: MiFarePigeon? = nilOrValue(pigeonVar_list[17])
+    let otherTagCount: Int64? = nilOrValue(pigeonVar_list[13])
+    let ndefIos: NdefIosPigeon? = nilOrValue(pigeonVar_list[14])
+    let felica: FeliCaPigeon? = nilOrValue(pigeonVar_list[15])
+    let iso7816: Iso7816Pigeon? = nilOrValue(pigeonVar_list[16])
+    let iso15693: Iso15693Pigeon? = nilOrValue(pigeonVar_list[17])
+    let mifare: MiFarePigeon? = nilOrValue(pigeonVar_list[18])
 
     return TagPigeon(
       handle: handle,
@@ -1630,6 +1670,7 @@ struct TagPigeon: Hashable, CustomStringConvertible {
       mifareClassic: mifareClassic,
       mifareUltralight: mifareUltralight,
       nfcBarcode: nfcBarcode,
+      otherTagCount: otherTagCount,
       ndefIos: ndefIos,
       felica: felica,
       iso7816: iso7816,
@@ -1652,6 +1693,7 @@ struct TagPigeon: Hashable, CustomStringConvertible {
       mifareClassic,
       mifareUltralight,
       nfcBarcode,
+      otherTagCount,
       ndefIos,
       felica,
       iso7816,
@@ -1663,7 +1705,7 @@ struct TagPigeon: Hashable, CustomStringConvertible {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return PigeonPigeonInternal.deepEquals(lhs.handle, rhs.handle) && PigeonPigeonInternal.deepEquals(lhs.id, rhs.id) && PigeonPigeonInternal.deepEquals(lhs.techList, rhs.techList) && PigeonPigeonInternal.deepEquals(lhs.ndefAndroid, rhs.ndefAndroid) && PigeonPigeonInternal.deepEquals(lhs.ndefFormatable, rhs.ndefFormatable) && PigeonPigeonInternal.deepEquals(lhs.nfcA, rhs.nfcA) && PigeonPigeonInternal.deepEquals(lhs.nfcB, rhs.nfcB) && PigeonPigeonInternal.deepEquals(lhs.nfcF, rhs.nfcF) && PigeonPigeonInternal.deepEquals(lhs.nfcV, rhs.nfcV) && PigeonPigeonInternal.deepEquals(lhs.isoDep, rhs.isoDep) && PigeonPigeonInternal.deepEquals(lhs.mifareClassic, rhs.mifareClassic) && PigeonPigeonInternal.deepEquals(lhs.mifareUltralight, rhs.mifareUltralight) && PigeonPigeonInternal.deepEquals(lhs.nfcBarcode, rhs.nfcBarcode) && PigeonPigeonInternal.deepEquals(lhs.ndefIos, rhs.ndefIos) && PigeonPigeonInternal.deepEquals(lhs.felica, rhs.felica) && PigeonPigeonInternal.deepEquals(lhs.iso7816, rhs.iso7816) && PigeonPigeonInternal.deepEquals(lhs.iso15693, rhs.iso15693) && PigeonPigeonInternal.deepEquals(lhs.mifare, rhs.mifare)
+    return PigeonPigeonInternal.deepEquals(lhs.handle, rhs.handle) && PigeonPigeonInternal.deepEquals(lhs.id, rhs.id) && PigeonPigeonInternal.deepEquals(lhs.techList, rhs.techList) && PigeonPigeonInternal.deepEquals(lhs.ndefAndroid, rhs.ndefAndroid) && PigeonPigeonInternal.deepEquals(lhs.ndefFormatable, rhs.ndefFormatable) && PigeonPigeonInternal.deepEquals(lhs.nfcA, rhs.nfcA) && PigeonPigeonInternal.deepEquals(lhs.nfcB, rhs.nfcB) && PigeonPigeonInternal.deepEquals(lhs.nfcF, rhs.nfcF) && PigeonPigeonInternal.deepEquals(lhs.nfcV, rhs.nfcV) && PigeonPigeonInternal.deepEquals(lhs.isoDep, rhs.isoDep) && PigeonPigeonInternal.deepEquals(lhs.mifareClassic, rhs.mifareClassic) && PigeonPigeonInternal.deepEquals(lhs.mifareUltralight, rhs.mifareUltralight) && PigeonPigeonInternal.deepEquals(lhs.nfcBarcode, rhs.nfcBarcode) && PigeonPigeonInternal.deepEquals(lhs.otherTagCount, rhs.otherTagCount) && PigeonPigeonInternal.deepEquals(lhs.ndefIos, rhs.ndefIos) && PigeonPigeonInternal.deepEquals(lhs.felica, rhs.felica) && PigeonPigeonInternal.deepEquals(lhs.iso7816, rhs.iso7816) && PigeonPigeonInternal.deepEquals(lhs.iso15693, rhs.iso15693) && PigeonPigeonInternal.deepEquals(lhs.mifare, rhs.mifare)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -1681,6 +1723,7 @@ struct TagPigeon: Hashable, CustomStringConvertible {
     PigeonPigeonInternal.deepHash(value: mifareClassic, hasher: &hasher)
     PigeonPigeonInternal.deepHash(value: mifareUltralight, hasher: &hasher)
     PigeonPigeonInternal.deepHash(value: nfcBarcode, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: otherTagCount, hasher: &hasher)
     PigeonPigeonInternal.deepHash(value: ndefIos, hasher: &hasher)
     PigeonPigeonInternal.deepHash(value: felica, hasher: &hasher)
     PigeonPigeonInternal.deepHash(value: iso7816, hasher: &hasher)
@@ -1689,7 +1732,7 @@ struct TagPigeon: Hashable, CustomStringConvertible {
   }
 
   public var description: String {
-    return "TagPigeon(handle: \(String(describing: handle)), id: \(String(describing: id)), techList: \(String(describing: techList)), ndefAndroid: \(String(describing: ndefAndroid)), ndefFormatable: \(String(describing: ndefFormatable)), nfcA: \(String(describing: nfcA)), nfcB: \(String(describing: nfcB)), nfcF: \(String(describing: nfcF)), nfcV: \(String(describing: nfcV)), isoDep: \(String(describing: isoDep)), mifareClassic: \(String(describing: mifareClassic)), mifareUltralight: \(String(describing: mifareUltralight)), nfcBarcode: \(String(describing: nfcBarcode)), ndefIos: \(String(describing: ndefIos)), felica: \(String(describing: felica)), iso7816: \(String(describing: iso7816)), iso15693: \(String(describing: iso15693)), mifare: \(String(describing: mifare)))"
+    return "TagPigeon(handle: \(String(describing: handle)), id: \(String(describing: id)), techList: \(String(describing: techList)), ndefAndroid: \(String(describing: ndefAndroid)), ndefFormatable: \(String(describing: ndefFormatable)), nfcA: \(String(describing: nfcA)), nfcB: \(String(describing: nfcB)), nfcF: \(String(describing: nfcF)), nfcV: \(String(describing: nfcV)), isoDep: \(String(describing: isoDep)), mifareClassic: \(String(describing: mifareClassic)), mifareUltralight: \(String(describing: mifareUltralight)), nfcBarcode: \(String(describing: nfcBarcode)), otherTagCount: \(String(describing: otherTagCount)), ndefIos: \(String(describing: ndefIos)), felica: \(String(describing: felica)), iso7816: \(String(describing: iso7816)), iso15693: \(String(describing: iso15693)), mifare: \(String(describing: mifare)))"
   }
 }
 
@@ -1975,6 +2018,9 @@ struct Iso15693SystemInfoPigeon: Hashable, CustomStringConvertible {
   var dataStorageFormatIdentifier: Int64
   var icReference: Int64
   var totalBlocks: Int64
+  /// The tag UID, which the iOS 14 replacement selector returns alongside the rest. Null
+  /// only if the tag answered without one.
+  var uid: FlutterStandardTypedData? = nil
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -1984,13 +2030,15 @@ struct Iso15693SystemInfoPigeon: Hashable, CustomStringConvertible {
     let dataStorageFormatIdentifier = pigeonVar_list[2] as! Int64
     let icReference = pigeonVar_list[3] as! Int64
     let totalBlocks = pigeonVar_list[4] as! Int64
+    let uid: FlutterStandardTypedData? = nilOrValue(pigeonVar_list[5])
 
     return Iso15693SystemInfoPigeon(
       applicationFamilyIdentifier: applicationFamilyIdentifier,
       blockSize: blockSize,
       dataStorageFormatIdentifier: dataStorageFormatIdentifier,
       icReference: icReference,
-      totalBlocks: totalBlocks
+      totalBlocks: totalBlocks,
+      uid: uid
     )
   }
   func toList() -> [Any?] {
@@ -2000,13 +2048,14 @@ struct Iso15693SystemInfoPigeon: Hashable, CustomStringConvertible {
       dataStorageFormatIdentifier,
       icReference,
       totalBlocks,
+      uid,
     ]
   }
   static func == (lhs: Iso15693SystemInfoPigeon, rhs: Iso15693SystemInfoPigeon) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return PigeonPigeonInternal.deepEquals(lhs.applicationFamilyIdentifier, rhs.applicationFamilyIdentifier) && PigeonPigeonInternal.deepEquals(lhs.blockSize, rhs.blockSize) && PigeonPigeonInternal.deepEquals(lhs.dataStorageFormatIdentifier, rhs.dataStorageFormatIdentifier) && PigeonPigeonInternal.deepEquals(lhs.icReference, rhs.icReference) && PigeonPigeonInternal.deepEquals(lhs.totalBlocks, rhs.totalBlocks)
+    return PigeonPigeonInternal.deepEquals(lhs.applicationFamilyIdentifier, rhs.applicationFamilyIdentifier) && PigeonPigeonInternal.deepEquals(lhs.blockSize, rhs.blockSize) && PigeonPigeonInternal.deepEquals(lhs.dataStorageFormatIdentifier, rhs.dataStorageFormatIdentifier) && PigeonPigeonInternal.deepEquals(lhs.icReference, rhs.icReference) && PigeonPigeonInternal.deepEquals(lhs.totalBlocks, rhs.totalBlocks) && PigeonPigeonInternal.deepEquals(lhs.uid, rhs.uid)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -2016,10 +2065,99 @@ struct Iso15693SystemInfoPigeon: Hashable, CustomStringConvertible {
     PigeonPigeonInternal.deepHash(value: dataStorageFormatIdentifier, hasher: &hasher)
     PigeonPigeonInternal.deepHash(value: icReference, hasher: &hasher)
     PigeonPigeonInternal.deepHash(value: totalBlocks, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: uid, hasher: &hasher)
   }
 
   public var description: String {
-    return "Iso15693SystemInfoPigeon(applicationFamilyIdentifier: \(String(describing: applicationFamilyIdentifier)), blockSize: \(String(describing: blockSize)), dataStorageFormatIdentifier: \(String(describing: dataStorageFormatIdentifier)), icReference: \(String(describing: icReference)), totalBlocks: \(String(describing: totalBlocks)))"
+    return "Iso15693SystemInfoPigeon(applicationFamilyIdentifier: \(String(describing: applicationFamilyIdentifier)), blockSize: \(String(describing: blockSize)), dataStorageFormatIdentifier: \(String(describing: dataStorageFormatIdentifier)), icReference: \(String(describing: icReference)), totalBlocks: \(String(describing: totalBlocks)), uid: \(String(describing: uid)))"
+  }
+}
+
+/// A response that carries the ISO 15693 response flag as well as its data.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct Iso15693ResponsePigeon: Hashable, CustomStringConvertible {
+  var flags: [Iso15693ResponseFlagPigeon]
+  var data: FlutterStandardTypedData
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> Iso15693ResponsePigeon? {
+    let flags = pigeonVar_list[0] as! [Iso15693ResponseFlagPigeon]
+    let data = pigeonVar_list[1] as! FlutterStandardTypedData
+
+    return Iso15693ResponsePigeon(
+      flags: flags,
+      data: data
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      flags,
+      data,
+    ]
+  }
+  static func == (lhs: Iso15693ResponsePigeon, rhs: Iso15693ResponsePigeon) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return PigeonPigeonInternal.deepEquals(lhs.flags, rhs.flags) && PigeonPigeonInternal.deepEquals(lhs.data, rhs.data)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("Iso15693ResponsePigeon")
+    PigeonPigeonInternal.deepHash(value: flags, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: data, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "Iso15693ResponsePigeon(flags: \(String(describing: flags)), data: \(String(describing: data)))"
+  }
+}
+
+/// `NFCTagCommandConfiguration`, which lets CoreNFC retry inside its own session rather
+/// than paying a Dart round trip per attempt. iOS only.
+///
+/// Only two ISO 15693 commands accept one; there is no general form.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct Iso15693CommandConfigurationPigeon: Hashable, CustomStringConvertible {
+  var maximumRetries: Int64
+  /// `NFCTagCommandConfiguration.retryInterval`, in seconds.
+  var retryIntervalSeconds: Double
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> Iso15693CommandConfigurationPigeon? {
+    let maximumRetries = pigeonVar_list[0] as! Int64
+    let retryIntervalSeconds = pigeonVar_list[1] as! Double
+
+    return Iso15693CommandConfigurationPigeon(
+      maximumRetries: maximumRetries,
+      retryIntervalSeconds: retryIntervalSeconds
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      maximumRetries,
+      retryIntervalSeconds,
+    ]
+  }
+  static func == (lhs: Iso15693CommandConfigurationPigeon, rhs: Iso15693CommandConfigurationPigeon) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return PigeonPigeonInternal.deepEquals(lhs.maximumRetries, rhs.maximumRetries) && PigeonPigeonInternal.deepEquals(lhs.retryIntervalSeconds, rhs.retryIntervalSeconds)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("Iso15693CommandConfigurationPigeon")
+    PigeonPigeonInternal.deepHash(value: maximumRetries, hasher: &hasher)
+    PigeonPigeonInternal.deepHash(value: retryIntervalSeconds, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "Iso15693CommandConfigurationPigeon(maximumRetries: \(String(describing: maximumRetries)), retryIntervalSeconds: \(String(describing: retryIntervalSeconds)))"
   }
 }
 
@@ -2286,160 +2424,182 @@ private class PigeonPigeonCodecReader: FlutterStandardReader {
     case 139:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return TypeNameFormatPigeon(rawValue: enumResultAsInt)
+        return CardEmulationCategoryPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 140:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return MifareClassicTypePigeon(rawValue: enumResultAsInt)
+        return AidSelectionModePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 141:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return MifareUltralightTypePigeon(rawValue: enumResultAsInt)
+        return TypeNameFormatPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 142:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return NfcBarcodeTypePigeon(rawValue: enumResultAsInt)
+        return MifareClassicTypePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 143:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return MiFareFamilyPigeon(rawValue: enumResultAsInt)
+        return MifareUltralightTypePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 144:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return NdefStatusPigeon(rawValue: enumResultAsInt)
+        return NfcBarcodeTypePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 145:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return Iso15693RequestFlagPigeon(rawValue: enumResultAsInt)
+        return MiFareFamilyPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 146:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return FeliCaPollingRequestCodePigeon(rawValue: enumResultAsInt)
+        return NdefStatusPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 147:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return FeliCaPollingTimeSlotPigeon(rawValue: enumResultAsInt)
+        return Iso15693RequestFlagPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 148:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return VasModePigeon(rawValue: enumResultAsInt)
+        return Iso15693ResponseFlagPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 149:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return VasResponseErrorCodePigeon(rawValue: enumResultAsInt)
+        return FeliCaPollingRequestCodePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 150:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return ErrorSourcePigeon(rawValue: enumResultAsInt)
+        return FeliCaPollingTimeSlotPigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 151:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return SessionKindPigeon(rawValue: enumResultAsInt)
+        return VasModePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 152:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return AndroidErrorCodePigeon(rawValue: enumResultAsInt)
+        return VasResponseErrorCodePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 153:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return ReaderErrorCodePigeon(rawValue: enumResultAsInt)
+        return ErrorSourcePigeon(rawValue: enumResultAsInt)
       }
       return nil
     case 154:
-      return NdefRecordPigeon.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return SessionKindPigeon(rawValue: enumResultAsInt)
+      }
+      return nil
     case 155:
-      return NdefMessagePigeon.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return AndroidErrorCodePigeon(rawValue: enumResultAsInt)
+      }
+      return nil
     case 156:
-      return SessionConfigPigeon.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return ReaderErrorCodePigeon(rawValue: enumResultAsInt)
+      }
+      return nil
     case 157:
-      return PollingFramePigeon.fromList(self.readValue() as! [Any?])
+      return NdefRecordPigeon.fromList(self.readValue() as! [Any?])
     case 158:
-      return AvailableNfcAntennaPigeon.fromList(self.readValue() as! [Any?])
+      return NdefMessagePigeon.fromList(self.readValue() as! [Any?])
     case 159:
-      return NfcAntennaInfoPigeon.fromList(self.readValue() as! [Any?])
+      return SessionConfigPigeon.fromList(self.readValue() as! [Any?])
     case 160:
-      return NfcEventPigeon.fromList(self.readValue() as! [Any?])
+      return PollingFramePigeon.fromList(self.readValue() as! [Any?])
     case 161:
-      return TagIntentSetupPigeon.fromList(self.readValue() as! [Any?])
+      return AvailableNfcAntennaPigeon.fromList(self.readValue() as! [Any?])
     case 162:
-      return NfcAPigeon.fromList(self.readValue() as! [Any?])
+      return NfcAntennaInfoPigeon.fromList(self.readValue() as! [Any?])
     case 163:
-      return NfcBPigeon.fromList(self.readValue() as! [Any?])
+      return NfcEventPigeon.fromList(self.readValue() as! [Any?])
     case 164:
-      return NfcFPigeon.fromList(self.readValue() as! [Any?])
+      return TagIntentSetupPigeon.fromList(self.readValue() as! [Any?])
     case 165:
-      return NfcVPigeon.fromList(self.readValue() as! [Any?])
+      return NfcAPigeon.fromList(self.readValue() as! [Any?])
     case 166:
-      return IsoDepPigeon.fromList(self.readValue() as! [Any?])
+      return NfcBPigeon.fromList(self.readValue() as! [Any?])
     case 167:
-      return MifareClassicPigeon.fromList(self.readValue() as! [Any?])
+      return NfcFPigeon.fromList(self.readValue() as! [Any?])
     case 168:
-      return MifareUltralightPigeon.fromList(self.readValue() as! [Any?])
+      return NfcVPigeon.fromList(self.readValue() as! [Any?])
     case 169:
-      return NfcBarcodePigeon.fromList(self.readValue() as! [Any?])
+      return IsoDepPigeon.fromList(self.readValue() as! [Any?])
     case 170:
-      return NdefAndroidPigeon.fromList(self.readValue() as! [Any?])
+      return MifareClassicPigeon.fromList(self.readValue() as! [Any?])
     case 171:
-      return NdefIosPigeon.fromList(self.readValue() as! [Any?])
+      return MifareUltralightPigeon.fromList(self.readValue() as! [Any?])
     case 172:
-      return FeliCaPigeon.fromList(self.readValue() as! [Any?])
+      return NfcBarcodePigeon.fromList(self.readValue() as! [Any?])
     case 173:
-      return Iso7816Pigeon.fromList(self.readValue() as! [Any?])
+      return NdefAndroidPigeon.fromList(self.readValue() as! [Any?])
     case 174:
-      return Iso15693Pigeon.fromList(self.readValue() as! [Any?])
+      return NdefIosPigeon.fromList(self.readValue() as! [Any?])
     case 175:
-      return MiFarePigeon.fromList(self.readValue() as! [Any?])
+      return FeliCaPigeon.fromList(self.readValue() as! [Any?])
     case 176:
-      return TagPigeon.fromList(self.readValue() as! [Any?])
+      return Iso7816Pigeon.fromList(self.readValue() as! [Any?])
     case 177:
-      return Iso7816ResponseApduPigeon.fromList(self.readValue() as! [Any?])
+      return Iso15693Pigeon.fromList(self.readValue() as! [Any?])
     case 178:
-      return FeliCaPollingResponsePigeon.fromList(self.readValue() as! [Any?])
+      return MiFarePigeon.fromList(self.readValue() as! [Any?])
     case 179:
-      return FeliCaStatusFlagPigeon.fromList(self.readValue() as! [Any?])
+      return TagPigeon.fromList(self.readValue() as! [Any?])
     case 180:
-      return FeliCaReadWithoutEncryptionResponsePigeon.fromList(self.readValue() as! [Any?])
+      return Iso7816ResponseApduPigeon.fromList(self.readValue() as! [Any?])
     case 181:
-      return FeliCaRequestServiceV2ResponsePigeon.fromList(self.readValue() as! [Any?])
+      return FeliCaPollingResponsePigeon.fromList(self.readValue() as! [Any?])
     case 182:
-      return FeliCaRequestSpecificationVersionResponsePigeon.fromList(self.readValue() as! [Any?])
+      return FeliCaStatusFlagPigeon.fromList(self.readValue() as! [Any?])
     case 183:
-      return Iso15693SystemInfoPigeon.fromList(self.readValue() as! [Any?])
+      return FeliCaReadWithoutEncryptionResponsePigeon.fromList(self.readValue() as! [Any?])
     case 184:
-      return QueryNdefStatusResponsePigeon.fromList(self.readValue() as! [Any?])
+      return FeliCaRequestServiceV2ResponsePigeon.fromList(self.readValue() as! [Any?])
     case 185:
-      return VasCommandConfigurationPigeon.fromList(self.readValue() as! [Any?])
+      return FeliCaRequestSpecificationVersionResponsePigeon.fromList(self.readValue() as! [Any?])
     case 186:
-      return VasResponsePigeon.fromList(self.readValue() as! [Any?])
+      return Iso15693SystemInfoPigeon.fromList(self.readValue() as! [Any?])
     case 187:
+      return Iso15693ResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 188:
+      return Iso15693CommandConfigurationPigeon.fromList(self.readValue() as! [Any?])
+    case 189:
+      return QueryNdefStatusResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 190:
+      return VasCommandConfigurationPigeon.fromList(self.readValue() as! [Any?])
+    case 191:
+      return VasResponsePigeon.fromList(self.readValue() as! [Any?])
+    case 192:
       return NfcErrorPigeon.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -2479,152 +2639,167 @@ private class PigeonPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? AndroidTechPigeon {
       super.writeByte(138)
       super.writeValue(value.rawValue)
-    } else if let value = value as? TypeNameFormatPigeon {
+    } else if let value = value as? CardEmulationCategoryPigeon {
       super.writeByte(139)
       super.writeValue(value.rawValue)
-    } else if let value = value as? MifareClassicTypePigeon {
+    } else if let value = value as? AidSelectionModePigeon {
       super.writeByte(140)
       super.writeValue(value.rawValue)
-    } else if let value = value as? MifareUltralightTypePigeon {
+    } else if let value = value as? TypeNameFormatPigeon {
       super.writeByte(141)
       super.writeValue(value.rawValue)
-    } else if let value = value as? NfcBarcodeTypePigeon {
+    } else if let value = value as? MifareClassicTypePigeon {
       super.writeByte(142)
       super.writeValue(value.rawValue)
-    } else if let value = value as? MiFareFamilyPigeon {
+    } else if let value = value as? MifareUltralightTypePigeon {
       super.writeByte(143)
       super.writeValue(value.rawValue)
-    } else if let value = value as? NdefStatusPigeon {
+    } else if let value = value as? NfcBarcodeTypePigeon {
       super.writeByte(144)
       super.writeValue(value.rawValue)
-    } else if let value = value as? Iso15693RequestFlagPigeon {
+    } else if let value = value as? MiFareFamilyPigeon {
       super.writeByte(145)
       super.writeValue(value.rawValue)
-    } else if let value = value as? FeliCaPollingRequestCodePigeon {
+    } else if let value = value as? NdefStatusPigeon {
       super.writeByte(146)
       super.writeValue(value.rawValue)
-    } else if let value = value as? FeliCaPollingTimeSlotPigeon {
+    } else if let value = value as? Iso15693RequestFlagPigeon {
       super.writeByte(147)
       super.writeValue(value.rawValue)
-    } else if let value = value as? VasModePigeon {
+    } else if let value = value as? Iso15693ResponseFlagPigeon {
       super.writeByte(148)
       super.writeValue(value.rawValue)
-    } else if let value = value as? VasResponseErrorCodePigeon {
+    } else if let value = value as? FeliCaPollingRequestCodePigeon {
       super.writeByte(149)
       super.writeValue(value.rawValue)
-    } else if let value = value as? ErrorSourcePigeon {
+    } else if let value = value as? FeliCaPollingTimeSlotPigeon {
       super.writeByte(150)
       super.writeValue(value.rawValue)
-    } else if let value = value as? SessionKindPigeon {
+    } else if let value = value as? VasModePigeon {
       super.writeByte(151)
       super.writeValue(value.rawValue)
-    } else if let value = value as? AndroidErrorCodePigeon {
+    } else if let value = value as? VasResponseErrorCodePigeon {
       super.writeByte(152)
       super.writeValue(value.rawValue)
-    } else if let value = value as? ReaderErrorCodePigeon {
+    } else if let value = value as? ErrorSourcePigeon {
       super.writeByte(153)
       super.writeValue(value.rawValue)
-    } else if let value = value as? NdefRecordPigeon {
+    } else if let value = value as? SessionKindPigeon {
       super.writeByte(154)
-      super.writeValue(value.toList())
-    } else if let value = value as? NdefMessagePigeon {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? AndroidErrorCodePigeon {
       super.writeByte(155)
-      super.writeValue(value.toList())
-    } else if let value = value as? SessionConfigPigeon {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? ReaderErrorCodePigeon {
       super.writeByte(156)
-      super.writeValue(value.toList())
-    } else if let value = value as? PollingFramePigeon {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? NdefRecordPigeon {
       super.writeByte(157)
       super.writeValue(value.toList())
-    } else if let value = value as? AvailableNfcAntennaPigeon {
+    } else if let value = value as? NdefMessagePigeon {
       super.writeByte(158)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcAntennaInfoPigeon {
+    } else if let value = value as? SessionConfigPigeon {
       super.writeByte(159)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcEventPigeon {
+    } else if let value = value as? PollingFramePigeon {
       super.writeByte(160)
       super.writeValue(value.toList())
-    } else if let value = value as? TagIntentSetupPigeon {
+    } else if let value = value as? AvailableNfcAntennaPigeon {
       super.writeByte(161)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcAPigeon {
+    } else if let value = value as? NfcAntennaInfoPigeon {
       super.writeByte(162)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcBPigeon {
+    } else if let value = value as? NfcEventPigeon {
       super.writeByte(163)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcFPigeon {
+    } else if let value = value as? TagIntentSetupPigeon {
       super.writeByte(164)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcVPigeon {
+    } else if let value = value as? NfcAPigeon {
       super.writeByte(165)
       super.writeValue(value.toList())
-    } else if let value = value as? IsoDepPigeon {
+    } else if let value = value as? NfcBPigeon {
       super.writeByte(166)
       super.writeValue(value.toList())
-    } else if let value = value as? MifareClassicPigeon {
+    } else if let value = value as? NfcFPigeon {
       super.writeByte(167)
       super.writeValue(value.toList())
-    } else if let value = value as? MifareUltralightPigeon {
+    } else if let value = value as? NfcVPigeon {
       super.writeByte(168)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcBarcodePigeon {
+    } else if let value = value as? IsoDepPigeon {
       super.writeByte(169)
       super.writeValue(value.toList())
-    } else if let value = value as? NdefAndroidPigeon {
+    } else if let value = value as? MifareClassicPigeon {
       super.writeByte(170)
       super.writeValue(value.toList())
-    } else if let value = value as? NdefIosPigeon {
+    } else if let value = value as? MifareUltralightPigeon {
       super.writeByte(171)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaPigeon {
+    } else if let value = value as? NfcBarcodePigeon {
       super.writeByte(172)
       super.writeValue(value.toList())
-    } else if let value = value as? Iso7816Pigeon {
+    } else if let value = value as? NdefAndroidPigeon {
       super.writeByte(173)
       super.writeValue(value.toList())
-    } else if let value = value as? Iso15693Pigeon {
+    } else if let value = value as? NdefIosPigeon {
       super.writeByte(174)
       super.writeValue(value.toList())
-    } else if let value = value as? MiFarePigeon {
+    } else if let value = value as? FeliCaPigeon {
       super.writeByte(175)
       super.writeValue(value.toList())
-    } else if let value = value as? TagPigeon {
+    } else if let value = value as? Iso7816Pigeon {
       super.writeByte(176)
       super.writeValue(value.toList())
-    } else if let value = value as? Iso7816ResponseApduPigeon {
+    } else if let value = value as? Iso15693Pigeon {
       super.writeByte(177)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaPollingResponsePigeon {
+    } else if let value = value as? MiFarePigeon {
       super.writeByte(178)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaStatusFlagPigeon {
+    } else if let value = value as? TagPigeon {
       super.writeByte(179)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaReadWithoutEncryptionResponsePigeon {
+    } else if let value = value as? Iso7816ResponseApduPigeon {
       super.writeByte(180)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaRequestServiceV2ResponsePigeon {
+    } else if let value = value as? FeliCaPollingResponsePigeon {
       super.writeByte(181)
       super.writeValue(value.toList())
-    } else if let value = value as? FeliCaRequestSpecificationVersionResponsePigeon {
+    } else if let value = value as? FeliCaStatusFlagPigeon {
       super.writeByte(182)
       super.writeValue(value.toList())
-    } else if let value = value as? Iso15693SystemInfoPigeon {
+    } else if let value = value as? FeliCaReadWithoutEncryptionResponsePigeon {
       super.writeByte(183)
       super.writeValue(value.toList())
-    } else if let value = value as? QueryNdefStatusResponsePigeon {
+    } else if let value = value as? FeliCaRequestServiceV2ResponsePigeon {
       super.writeByte(184)
       super.writeValue(value.toList())
-    } else if let value = value as? VasCommandConfigurationPigeon {
+    } else if let value = value as? FeliCaRequestSpecificationVersionResponsePigeon {
       super.writeByte(185)
       super.writeValue(value.toList())
-    } else if let value = value as? VasResponsePigeon {
+    } else if let value = value as? Iso15693SystemInfoPigeon {
       super.writeByte(186)
       super.writeValue(value.toList())
-    } else if let value = value as? NfcErrorPigeon {
+    } else if let value = value as? Iso15693ResponsePigeon {
       super.writeByte(187)
+      super.writeValue(value.toList())
+    } else if let value = value as? Iso15693CommandConfigurationPigeon {
+      super.writeByte(188)
+      super.writeValue(value.toList())
+    } else if let value = value as? QueryNdefStatusResponsePigeon {
+      super.writeByte(189)
+      super.writeValue(value.toList())
+    } else if let value = value as? VasCommandConfigurationPigeon {
+      super.writeByte(190)
+      super.writeValue(value.toList())
+    } else if let value = value as? VasResponsePigeon {
+      super.writeByte(191)
+      super.writeValue(value.toList())
+    } else if let value = value as? NfcErrorPigeon {
+      super.writeByte(192)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -2790,6 +2965,17 @@ protocol NfcAndroidHostApi {
   func isEnabled() throws -> Bool
   func isSecureNfcSupported() throws -> Bool
   func isSecureNfcEnabled() throws -> Bool
+  /// Whether the device implements the Android 15 reader-option switch. False below API 35.
+  func isReaderOptionSupported() throws -> Bool
+  /// Whether tag *reading* is switched on, which is separate from the adapter being on.
+  ///
+  /// With the adapter on and this off, a session starts and no tag is ever discovered --
+  /// the same shape of silent dead end that [checkTagIntentSetup] answers on the intent
+  /// side. True below API 35, where the switch does not exist.
+  func isReaderOptionEnabled() throws -> Bool
+  /// Opens the system NFC settings screen. False when there is no activity to start it
+  /// from, or the device has no such screen.
+  func openNfcSettings() throws -> Bool
   /// The raw escape hatch: full control over `NfcAdapter.enableReaderMode` flags, for
   /// combinations the cross-platform `startSession` does not express.
   func enableReaderMode(flags: [ReaderFlagPigeon], presenceCheckDelayMillis: Int64, completion: @escaping (Result<Void, Error>) -> Void)
@@ -2820,6 +3006,15 @@ protocol NfcAndroidHostApi {
   func getMaxTransceiveLength(handle: String, tech: AndroidTechPigeon, completion: @escaping (Result<Int64, Error>) -> Void)
   func getTimeout(handle: String, tech: AndroidTechPigeon, completion: @escaping (Result<Int64, Error>) -> Void)
   func setTimeout(handle: String, tech: AndroidTechPigeon, timeout: Int64, completion: @escaping (Result<Void, Error>) -> Void)
+  /// Closes the connection to the tag and opens it again, which reselects it in the RF
+  /// field.
+  ///
+  /// The plugin reuses a connection across calls, and `isConnected` is a local flag: a
+  /// Mifare Classic sector authentication that fails halts the tag while the flag still
+  /// reads true, so every later command on that tag fails too. This is the only way out
+  /// short of tearing down the session. It deliberately discards sector authentication and
+  /// any timeout that was set.
+  func resetTech(handle: String, tech: AndroidTechPigeon, completion: @escaping (Result<Void, Error>) -> Void)
   func mifareClassicAuthenticateSector(handle: String, sectorIndex: Int64, key: FlutterStandardTypedData, useKeyA: Bool, completion: @escaping (Result<Bool, Error>) -> Void)
   func mifareClassicReadBlock(handle: String, blockIndex: Int64, completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void)
   func mifareClassicWriteBlock(handle: String, blockIndex: Int64, data: FlutterStandardTypedData, completion: @escaping (Result<Void, Error>) -> Void)
@@ -2846,6 +3041,21 @@ protocol NfcAndroidHostApi {
   /// Makes this app the preferred handler while it is in the foreground, so a tap reaches
   /// it rather than the user's default wallet.
   func hceSetPreferredService(preferred: Bool) throws
+  /// Whether the controller can route an AID *prefix* at all. Registering a prefix on
+  /// hardware that cannot simply fails, with nothing to distinguish it from a bad AID.
+  func hceSupportsAidPrefixRegistration() throws -> Bool
+  /// Whether [hceSetPreferredService] has any effect for this category. Always false for
+  /// payment on a device where the user's wallet choice is final.
+  func hceCategoryAllowsForegroundPreference(category: CardEmulationCategoryPigeon) throws -> Bool
+  /// How the platform picks between apps that claim the same AID in this category.
+  func hceSelectionModeForCategory(category: CardEmulationCategoryPigeon) throws -> AidSelectionModePigeon
+  /// Whether this app's service is the user's default for the category.
+  func hceIsDefaultServiceForCategory(category: CardEmulationCategoryPigeon) throws -> Bool
+  /// Whether this app's service is the one a reader selecting [aid] would reach.
+  func hceIsDefaultServiceForAid(aid: String) throws -> Bool
+  /// The AIDs currently registered against this app's service, static and dynamic together
+  /// -- the readback for [hceRegisterAids].
+  func hceAidsForService(category: CardEmulationCategoryPigeon) throws -> [String]
   func hceIsObserveModeSupported() throws -> Bool
   func hceIsObserveModeEnabled() throws -> Bool
   /// Stops the device answering readers and starts delivering their polling frames instead.
@@ -2913,6 +3123,53 @@ class NfcAndroidHostApiSetup {
       }
     } else {
       isSecureNfcEnabledChannel.setMessageHandler(nil)
+    }
+    /// Whether the device implements the Android 15 reader-option switch. False below API 35.
+    let isReaderOptionSupportedChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isReaderOptionSupported\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      isReaderOptionSupportedChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.isReaderOptionSupported()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      isReaderOptionSupportedChannel.setMessageHandler(nil)
+    }
+    /// Whether tag *reading* is switched on, which is separate from the adapter being on.
+    ///
+    /// With the adapter on and this off, a session starts and no tag is ever discovered --
+    /// the same shape of silent dead end that [checkTagIntentSetup] answers on the intent
+    /// side. True below API 35, where the switch does not exist.
+    let isReaderOptionEnabledChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isReaderOptionEnabled\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      isReaderOptionEnabledChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.isReaderOptionEnabled()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      isReaderOptionEnabledChannel.setMessageHandler(nil)
+    }
+    /// Opens the system NFC settings screen. False when there is no activity to start it
+    /// from, or the device has no such screen.
+    let openNfcSettingsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.openNfcSettings\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      openNfcSettingsChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.openNfcSettings()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      openNfcSettingsChannel.setMessageHandler(nil)
     }
     /// The raw escape hatch: full control over `NfcAdapter.enableReaderMode` flags, for
     /// combinations the cross-platform `startSession` does not express.
@@ -3171,6 +3428,32 @@ class NfcAndroidHostApiSetup {
       }
     } else {
       setTimeoutChannel.setMessageHandler(nil)
+    }
+    /// Closes the connection to the tag and opens it again, which reselects it in the RF
+    /// field.
+    ///
+    /// The plugin reuses a connection across calls, and `isConnected` is a local flag: a
+    /// Mifare Classic sector authentication that fails halts the tag while the flag still
+    /// reads true, so every later command on that tag fails too. This is the only way out
+    /// short of tearing down the session. It deliberately discards sector authentication and
+    /// any timeout that was set.
+    let resetTechChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.resetTech\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      resetTechChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let techArg = args[1] as! AndroidTechPigeon
+        api.resetTech(handle: handleArg, tech: techArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      resetTechChannel.setMessageHandler(nil)
     }
     let mifareClassicAuthenticateSectorChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.mifareClassicAuthenticateSector\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
@@ -3490,6 +3773,103 @@ class NfcAndroidHostApiSetup {
     } else {
       hceSetPreferredServiceChannel.setMessageHandler(nil)
     }
+    /// Whether the controller can route an AID *prefix* at all. Registering a prefix on
+    /// hardware that cannot simply fails, with nothing to distinguish it from a bad AID.
+    let hceSupportsAidPrefixRegistrationChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSupportsAidPrefixRegistration\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceSupportsAidPrefixRegistrationChannel.setMessageHandler { _, reply in
+        do {
+          let result = try api.hceSupportsAidPrefixRegistration()
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      hceSupportsAidPrefixRegistrationChannel.setMessageHandler(nil)
+    }
+    /// Whether [hceSetPreferredService] has any effect for this category. Always false for
+    /// payment on a device where the user's wallet choice is final.
+    let hceCategoryAllowsForegroundPreferenceChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceCategoryAllowsForegroundPreference\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceCategoryAllowsForegroundPreferenceChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let categoryArg = args[0] as! CardEmulationCategoryPigeon
+        do {
+          let result = try api.hceCategoryAllowsForegroundPreference(category: categoryArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      hceCategoryAllowsForegroundPreferenceChannel.setMessageHandler(nil)
+    }
+    /// How the platform picks between apps that claim the same AID in this category.
+    let hceSelectionModeForCategoryChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSelectionModeForCategory\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceSelectionModeForCategoryChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let categoryArg = args[0] as! CardEmulationCategoryPigeon
+        do {
+          let result = try api.hceSelectionModeForCategory(category: categoryArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      hceSelectionModeForCategoryChannel.setMessageHandler(nil)
+    }
+    /// Whether this app's service is the user's default for the category.
+    let hceIsDefaultServiceForCategoryChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsDefaultServiceForCategory\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceIsDefaultServiceForCategoryChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let categoryArg = args[0] as! CardEmulationCategoryPigeon
+        do {
+          let result = try api.hceIsDefaultServiceForCategory(category: categoryArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      hceIsDefaultServiceForCategoryChannel.setMessageHandler(nil)
+    }
+    /// Whether this app's service is the one a reader selecting [aid] would reach.
+    let hceIsDefaultServiceForAidChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsDefaultServiceForAid\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceIsDefaultServiceForAidChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let aidArg = args[0] as! String
+        do {
+          let result = try api.hceIsDefaultServiceForAid(aid: aidArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      hceIsDefaultServiceForAidChannel.setMessageHandler(nil)
+    }
+    /// The AIDs currently registered against this app's service, static and dynamic together
+    /// -- the readback for [hceRegisterAids].
+    let hceAidsForServiceChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceAidsForService\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      hceAidsForServiceChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let categoryArg = args[0] as! CardEmulationCategoryPigeon
+        do {
+          let result = try api.hceAidsForService(category: categoryArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      hceAidsForServiceChannel.setMessageHandler(nil)
+    }
     let hceIsObserveModeSupportedChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsObserveModeSupported\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       hceIsObserveModeSupportedChannel.setMessageHandler { _, reply in
@@ -3668,6 +4048,11 @@ class NfcAndroidHostApiSetup {
 /// Generated protocol from Pigeon that represents a handler of messages from Flutter.
 protocol NfcIosHostApi {
   func tagSessionReadingAvailable() throws -> Bool
+  /// `NFCTag.isAvailable` for the tag behind [handle].
+  ///
+  /// Asks whether *this* tag is still connected and reachable, not whether some tag is in
+  /// the field. False for a handle the session has already let go of.
+  func tagIsAvailable(handle: String) throws -> Bool
   func tagSessionSetAlertMessage(alertMessage: String, completion: @escaping (Result<Void, Error>) -> Void)
   /// Drops the current tag and polls again, without tearing down the reader sheet.
   func tagSessionRestartPolling(completion: @escaping (Result<Void, Error>) -> Void)
@@ -3708,6 +4093,36 @@ protocol NfcIosHostApi {
   func iso15693ExtendedReadMultipleBlocks(handle: String, flags: [Iso15693RequestFlagPigeon], blockNumber: Int64, numberOfBlocks: Int64, completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void)
   func iso15693GetSystemInfo(handle: String, flags: [Iso15693RequestFlagPigeon], completion: @escaping (Result<Iso15693SystemInfoPigeon, Error>) -> Void)
   func iso15693CustomCommand(handle: String, flags: [Iso15693RequestFlagPigeon], customCommandCode: Int64, customRequestParameters: FlutterStandardTypedData, completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void)
+  /// The general ISO 15693-3 request: request flag, command code, optional data.
+  ///
+  /// The whole frame must stay within 256 bytes.
+  func iso15693SendRequest(handle: String, flags: Int64, commandCode: Int64, data: FlutterStandardTypedData?, completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void)
+  /// Fast read multiple blocks (0x2D).
+  func iso15693FastReadMultipleBlocks(handle: String, flags: [Iso15693RequestFlagPigeon], blockNumber: Int64, numberOfBlocks: Int64, completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void)
+  /// Extended fast read multiple blocks (0x3D).
+  func iso15693ExtendedFastReadMultipleBlocks(handle: String, flags: [Iso15693RequestFlagPigeon], blockNumber: Int64, numberOfBlocks: Int64, completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void)
+  /// Extended write multiple blocks (0x34).
+  func iso15693ExtendedWriteMultipleBlocks(handle: String, flags: [Iso15693RequestFlagPigeon], blockNumber: Int64, numberOfBlocks: Int64, dataBlocks: [FlutterStandardTypedData], completion: @escaping (Result<Void, Error>) -> Void)
+  /// Extended get multiple block security status (0x3C).
+  func iso15693ExtendedGetMultipleBlockSecurityStatus(handle: String, flags: [Iso15693RequestFlagPigeon], blockNumber: Int64, numberOfBlocks: Int64, completion: @escaping (Result<[Int64], Error>) -> Void)
+  /// Authenticate (0x35), per ISO/IEC 29167. The in-process reply is returned unprocessed.
+  func iso15693Authenticate(handle: String, flags: [Iso15693RequestFlagPigeon], cryptoSuiteIdentifier: Int64, message: FlutterStandardTypedData, completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void)
+  /// Key update (0x36). The message content follows the crypto suite used to authenticate.
+  func iso15693KeyUpdate(handle: String, flags: [Iso15693RequestFlagPigeon], keyIdentifier: Int64, message: FlutterStandardTypedData, completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void)
+  /// Challenge (0x39). Answers nothing on success; read the result with
+  /// [iso15693ReadBuffer].
+  func iso15693Challenge(handle: String, flags: [Iso15693RequestFlagPigeon], cryptoSuiteIdentifier: Int64, message: FlutterStandardTypedData, completion: @escaping (Result<Void, Error>) -> Void)
+  /// Read buffer (0x3A).
+  func iso15693ReadBuffer(handle: String, flags: [Iso15693RequestFlagPigeon], completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void)
+  /// `getSystemInfoAndUIDWithRequestFlag`, the iOS 14 replacement for the selector
+  /// [iso15693GetSystemInfo] used until 3.3.0. Returns the UID as well.
+  func iso15693GetSystemInfoAndUid(handle: String, flags: [Iso15693RequestFlagPigeon], completion: @escaping (Result<Iso15693SystemInfoPigeon, Error>) -> Void)
+  /// Read multiple blocks with a retry configuration, so CoreNFC retries inside its own
+  /// session. [chunkSize] is how many blocks each request asks for.
+  func iso15693ReadMultipleBlocksWithConfiguration(handle: String, blockNumber: Int64, numberOfBlocks: Int64, chunkSize: Int64, configuration: Iso15693CommandConfigurationPigeon, completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void)
+  /// Custom command with a retry configuration. [manufacturerCode] is the 8-bit IC
+  /// manufacturer code CoreNFC puts in the frame.
+  func iso15693CustomCommandWithConfiguration(handle: String, manufacturerCode: Int64, customCommandCode: Int64, customRequestParameters: FlutterStandardTypedData, configuration: Iso15693CommandConfigurationPigeon, completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void)
   func iso7816SendCommand(handle: String, instructionClass: Int64, instructionCode: Int64, p1Parameter: Int64, p2Parameter: Int64, data: FlutterStandardTypedData, expectedResponseLength: Int64, completion: @escaping (Result<Iso7816ResponseApduPigeon, Error>) -> Void)
   func iso7816SendCommandRaw(handle: String, data: FlutterStandardTypedData, completion: @escaping (Result<Iso7816ResponseApduPigeon, Error>) -> Void)
   func mifareSendCommand(handle: String, commandPacket: FlutterStandardTypedData, completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void)
@@ -3733,6 +4148,25 @@ class NfcIosHostApiSetup {
       }
     } else {
       tagSessionReadingAvailableChannel.setMessageHandler(nil)
+    }
+    /// `NFCTag.isAvailable` for the tag behind [handle].
+    ///
+    /// Asks whether *this* tag is still connected and reachable, not whether some tag is in
+    /// the field. False for a handle the session has already let go of.
+    let tagIsAvailableChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.tagIsAvailable\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      tagIsAvailableChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        do {
+          let result = try api.tagIsAvailable(handle: handleArg)
+          reply(wrapResult(result))
+        } catch {
+          reply(wrapError(error))
+        }
+      }
+    } else {
+      tagIsAvailableChannel.setMessageHandler(nil)
     }
     let tagSessionSetAlertMessageChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.tagSessionSetAlertMessage\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
@@ -4407,6 +4841,263 @@ class NfcIosHostApiSetup {
       }
     } else {
       iso15693CustomCommandChannel.setMessageHandler(nil)
+    }
+    /// The general ISO 15693-3 request: request flag, command code, optional data.
+    ///
+    /// The whole frame must stay within 256 bytes.
+    let iso15693SendRequestChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693SendRequest\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693SendRequestChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! Int64
+        let commandCodeArg = args[2] as! Int64
+        let dataArg: FlutterStandardTypedData? = nilOrValue(args[3])
+        api.iso15693SendRequest(handle: handleArg, flags: flagsArg, commandCode: commandCodeArg, data: dataArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693SendRequestChannel.setMessageHandler(nil)
+    }
+    /// Fast read multiple blocks (0x2D).
+    let iso15693FastReadMultipleBlocksChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693FastReadMultipleBlocks\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693FastReadMultipleBlocksChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        let blockNumberArg = args[2] as! Int64
+        let numberOfBlocksArg = args[3] as! Int64
+        api.iso15693FastReadMultipleBlocks(handle: handleArg, flags: flagsArg, blockNumber: blockNumberArg, numberOfBlocks: numberOfBlocksArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693FastReadMultipleBlocksChannel.setMessageHandler(nil)
+    }
+    /// Extended fast read multiple blocks (0x3D).
+    let iso15693ExtendedFastReadMultipleBlocksChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ExtendedFastReadMultipleBlocks\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693ExtendedFastReadMultipleBlocksChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        let blockNumberArg = args[2] as! Int64
+        let numberOfBlocksArg = args[3] as! Int64
+        api.iso15693ExtendedFastReadMultipleBlocks(handle: handleArg, flags: flagsArg, blockNumber: blockNumberArg, numberOfBlocks: numberOfBlocksArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693ExtendedFastReadMultipleBlocksChannel.setMessageHandler(nil)
+    }
+    /// Extended write multiple blocks (0x34).
+    let iso15693ExtendedWriteMultipleBlocksChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ExtendedWriteMultipleBlocks\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693ExtendedWriteMultipleBlocksChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        let blockNumberArg = args[2] as! Int64
+        let numberOfBlocksArg = args[3] as! Int64
+        let dataBlocksArg = args[4] as! [FlutterStandardTypedData]
+        api.iso15693ExtendedWriteMultipleBlocks(handle: handleArg, flags: flagsArg, blockNumber: blockNumberArg, numberOfBlocks: numberOfBlocksArg, dataBlocks: dataBlocksArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693ExtendedWriteMultipleBlocksChannel.setMessageHandler(nil)
+    }
+    /// Extended get multiple block security status (0x3C).
+    let iso15693ExtendedGetMultipleBlockSecurityStatusChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ExtendedGetMultipleBlockSecurityStatus\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693ExtendedGetMultipleBlockSecurityStatusChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        let blockNumberArg = args[2] as! Int64
+        let numberOfBlocksArg = args[3] as! Int64
+        api.iso15693ExtendedGetMultipleBlockSecurityStatus(handle: handleArg, flags: flagsArg, blockNumber: blockNumberArg, numberOfBlocks: numberOfBlocksArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693ExtendedGetMultipleBlockSecurityStatusChannel.setMessageHandler(nil)
+    }
+    /// Authenticate (0x35), per ISO/IEC 29167. The in-process reply is returned unprocessed.
+    let iso15693AuthenticateChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693Authenticate\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693AuthenticateChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        let cryptoSuiteIdentifierArg = args[2] as! Int64
+        let messageArg = args[3] as! FlutterStandardTypedData
+        api.iso15693Authenticate(handle: handleArg, flags: flagsArg, cryptoSuiteIdentifier: cryptoSuiteIdentifierArg, message: messageArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693AuthenticateChannel.setMessageHandler(nil)
+    }
+    /// Key update (0x36). The message content follows the crypto suite used to authenticate.
+    let iso15693KeyUpdateChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693KeyUpdate\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693KeyUpdateChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        let keyIdentifierArg = args[2] as! Int64
+        let messageArg = args[3] as! FlutterStandardTypedData
+        api.iso15693KeyUpdate(handle: handleArg, flags: flagsArg, keyIdentifier: keyIdentifierArg, message: messageArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693KeyUpdateChannel.setMessageHandler(nil)
+    }
+    /// Challenge (0x39). Answers nothing on success; read the result with
+    /// [iso15693ReadBuffer].
+    let iso15693ChallengeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693Challenge\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693ChallengeChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        let cryptoSuiteIdentifierArg = args[2] as! Int64
+        let messageArg = args[3] as! FlutterStandardTypedData
+        api.iso15693Challenge(handle: handleArg, flags: flagsArg, cryptoSuiteIdentifier: cryptoSuiteIdentifierArg, message: messageArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693ChallengeChannel.setMessageHandler(nil)
+    }
+    /// Read buffer (0x3A).
+    let iso15693ReadBufferChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ReadBuffer\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693ReadBufferChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        api.iso15693ReadBuffer(handle: handleArg, flags: flagsArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693ReadBufferChannel.setMessageHandler(nil)
+    }
+    /// `getSystemInfoAndUIDWithRequestFlag`, the iOS 14 replacement for the selector
+    /// [iso15693GetSystemInfo] used until 3.3.0. Returns the UID as well.
+    let iso15693GetSystemInfoAndUidChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693GetSystemInfoAndUid\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693GetSystemInfoAndUidChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let flagsArg = args[1] as! [Iso15693RequestFlagPigeon]
+        api.iso15693GetSystemInfoAndUid(handle: handleArg, flags: flagsArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693GetSystemInfoAndUidChannel.setMessageHandler(nil)
+    }
+    /// Read multiple blocks with a retry configuration, so CoreNFC retries inside its own
+    /// session. [chunkSize] is how many blocks each request asks for.
+    let iso15693ReadMultipleBlocksWithConfigurationChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ReadMultipleBlocksWithConfiguration\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693ReadMultipleBlocksWithConfigurationChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let blockNumberArg = args[1] as! Int64
+        let numberOfBlocksArg = args[2] as! Int64
+        let chunkSizeArg = args[3] as! Int64
+        let configurationArg = args[4] as! Iso15693CommandConfigurationPigeon
+        api.iso15693ReadMultipleBlocksWithConfiguration(handle: handleArg, blockNumber: blockNumberArg, numberOfBlocks: numberOfBlocksArg, chunkSize: chunkSizeArg, configuration: configurationArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693ReadMultipleBlocksWithConfigurationChannel.setMessageHandler(nil)
+    }
+    /// Custom command with a retry configuration. [manufacturerCode] is the 8-bit IC
+    /// manufacturer code CoreNFC puts in the frame.
+    let iso15693CustomCommandWithConfigurationChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693CustomCommandWithConfiguration\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      iso15693CustomCommandWithConfigurationChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let handleArg = args[0] as! String
+        let manufacturerCodeArg = args[1] as! Int64
+        let customCommandCodeArg = args[2] as! Int64
+        let customRequestParametersArg = args[3] as! FlutterStandardTypedData
+        let configurationArg = args[4] as! Iso15693CommandConfigurationPigeon
+        api.iso15693CustomCommandWithConfiguration(handle: handleArg, manufacturerCode: manufacturerCodeArg, customCommandCode: customCommandCodeArg, customRequestParameters: customRequestParametersArg, configuration: configurationArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      iso15693CustomCommandWithConfigurationChannel.setMessageHandler(nil)
     }
     let iso7816SendCommandChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso7816SendCommand\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

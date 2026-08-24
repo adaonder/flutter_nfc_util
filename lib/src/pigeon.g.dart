@@ -212,6 +212,23 @@ enum AndroidTechPigeon {
   mifareUltralight,
 }
 
+/// `CardEmulation.CATEGORY_*`. Android only.
+enum CardEmulationCategoryPigeon {
+  payment,
+  other,
+}
+
+/// `CardEmulation.SELECTION_MODE_*`. Android only.
+///
+/// [unknown] covers a constant this version does not name, so a future platform value
+/// cannot turn into a crash.
+enum AidSelectionModePigeon {
+  preferDefault,
+  askIfConflict,
+  alwaysAsk,
+  unknown,
+}
+
 /// NDEF Type-Name-Format, as defined by the NFC Forum. Ordinals match the on-tag values
 /// 0x00..0x06.
 enum TypeNameFormatPigeon {
@@ -263,6 +280,21 @@ enum Iso15693RequestFlagPigeon {
   option,
   protocolExtension,
   select,
+}
+
+/// `NFCISO15693ResponseFlag`. iOS only.
+///
+/// Reported by the four ISO 15693 commands that hand back the tag's 8-bit response flag
+/// rather than swallowing it: authenticate, key update, read buffer, and the general
+/// [NfcIosHostApi.iso15693SendRequest].
+enum Iso15693ResponseFlagPigeon {
+  error,
+  responseBufferValid,
+  finalResponse,
+  protocolExtension,
+  blockSecurityStatusBit5,
+  blockSecurityStatusBit6,
+  waitTimeExtension,
 }
 
 enum FeliCaPollingRequestCodePigeon {
@@ -1791,6 +1823,7 @@ class TagPigeon {
     this.mifareClassic,
     this.mifareUltralight,
     this.nfcBarcode,
+    this.otherTagCount,
     this.ndefIos,
     this.felica,
     this.iso7816,
@@ -1826,6 +1859,14 @@ class TagPigeon {
 
   NfcBarcodePigeon? nfcBarcode;
 
+  /// How many *other* tags CoreNFC reported in the same detection. iOS only; null on
+  /// Android, where reader mode delivers one tag per callback.
+  ///
+  /// The session addresses one tag at a time, so anything above zero means a tap the app
+  /// should probably ask the user to repeat with one card. Before 3.3.0 the extra tags were
+  /// dropped with no signal at all, so which card answered was not deterministic.
+  int? otherTagCount;
+
   NdefIosPigeon? ndefIos;
 
   FeliCaPigeon? felica;
@@ -1851,6 +1892,7 @@ class TagPigeon {
       mifareClassic,
       mifareUltralight,
       nfcBarcode,
+      otherTagCount,
       ndefIos,
       felica,
       iso7816,
@@ -1879,11 +1921,12 @@ class TagPigeon {
       mifareClassic: result[10] as MifareClassicPigeon?,
       mifareUltralight: result[11] as MifareUltralightPigeon?,
       nfcBarcode: result[12] as NfcBarcodePigeon?,
-      ndefIos: result[13] as NdefIosPigeon?,
-      felica: result[14] as FeliCaPigeon?,
-      iso7816: result[15] as Iso7816Pigeon?,
-      iso15693: result[16] as Iso15693Pigeon?,
-      mifare: result[17] as MiFarePigeon?,
+      otherTagCount: result[13] as int?,
+      ndefIos: result[14] as NdefIosPigeon?,
+      felica: result[15] as FeliCaPigeon?,
+      iso7816: result[16] as Iso7816Pigeon?,
+      iso15693: result[17] as Iso15693Pigeon?,
+      mifare: result[18] as MiFarePigeon?,
     );
   }
 
@@ -1909,6 +1952,7 @@ class TagPigeon {
         _deepEquals(mifareClassic, other.mifareClassic) &&
         _deepEquals(mifareUltralight, other.mifareUltralight) &&
         _deepEquals(nfcBarcode, other.nfcBarcode) &&
+        _deepEquals(otherTagCount, other.otherTagCount) &&
         _deepEquals(ndefIos, other.ndefIos) &&
         _deepEquals(felica, other.felica) &&
         _deepEquals(iso7816, other.iso7816) &&
@@ -1922,7 +1966,7 @@ class TagPigeon {
 
   @override
   String toString() {
-    return 'TagPigeon(handle: $handle, id: $id, techList: $techList, ndefAndroid: $ndefAndroid, ndefFormatable: $ndefFormatable, nfcA: $nfcA, nfcB: $nfcB, nfcF: $nfcF, nfcV: $nfcV, isoDep: $isoDep, mifareClassic: $mifareClassic, mifareUltralight: $mifareUltralight, nfcBarcode: $nfcBarcode, ndefIos: $ndefIos, felica: $felica, iso7816: $iso7816, iso15693: $iso15693, mifare: $mifare)';
+    return 'TagPigeon(handle: $handle, id: $id, techList: $techList, ndefAndroid: $ndefAndroid, ndefFormatable: $ndefFormatable, nfcA: $nfcA, nfcB: $nfcB, nfcF: $nfcF, nfcV: $nfcV, isoDep: $isoDep, mifareClassic: $mifareClassic, mifareUltralight: $mifareUltralight, nfcBarcode: $nfcBarcode, otherTagCount: $otherTagCount, ndefIos: $ndefIos, felica: $felica, iso7816: $iso7816, iso15693: $iso15693, mifare: $mifare)';
   }
 }
 
@@ -2286,6 +2330,7 @@ class Iso15693SystemInfoPigeon {
     required this.dataStorageFormatIdentifier,
     required this.icReference,
     required this.totalBlocks,
+    this.uid,
   });
 
   int applicationFamilyIdentifier;
@@ -2298,6 +2343,10 @@ class Iso15693SystemInfoPigeon {
 
   int totalBlocks;
 
+  /// The tag UID, which the iOS 14 replacement selector returns alongside the rest. Null
+  /// only if the tag answered without one.
+  Uint8List? uid;
+
   List<Object?> _toList() {
     return <Object?>[
       applicationFamilyIdentifier,
@@ -2305,6 +2354,7 @@ class Iso15693SystemInfoPigeon {
       dataStorageFormatIdentifier,
       icReference,
       totalBlocks,
+      uid,
     ];
   }
 
@@ -2320,6 +2370,7 @@ class Iso15693SystemInfoPigeon {
       dataStorageFormatIdentifier: result[2]! as int,
       icReference: result[3]! as int,
       totalBlocks: result[4]! as int,
+      uid: result[5] as Uint8List?,
     );
   }
 
@@ -2336,7 +2387,8 @@ class Iso15693SystemInfoPigeon {
         _deepEquals(blockSize, other.blockSize) &&
         _deepEquals(dataStorageFormatIdentifier, other.dataStorageFormatIdentifier) &&
         _deepEquals(icReference, other.icReference) &&
-        _deepEquals(totalBlocks, other.totalBlocks);
+        _deepEquals(totalBlocks, other.totalBlocks) &&
+        _deepEquals(uid, other.uid);
   }
 
   @override
@@ -2345,7 +2397,116 @@ class Iso15693SystemInfoPigeon {
 
   @override
   String toString() {
-    return 'Iso15693SystemInfoPigeon(applicationFamilyIdentifier: $applicationFamilyIdentifier, blockSize: $blockSize, dataStorageFormatIdentifier: $dataStorageFormatIdentifier, icReference: $icReference, totalBlocks: $totalBlocks)';
+    return 'Iso15693SystemInfoPigeon(applicationFamilyIdentifier: $applicationFamilyIdentifier, blockSize: $blockSize, dataStorageFormatIdentifier: $dataStorageFormatIdentifier, icReference: $icReference, totalBlocks: $totalBlocks, uid: $uid)';
+  }
+}
+
+/// A response that carries the ISO 15693 response flag as well as its data.
+class Iso15693ResponsePigeon {
+  Iso15693ResponsePigeon({
+    required this.flags,
+    required this.data,
+  });
+
+  List<Iso15693ResponseFlagPigeon> flags;
+
+  Uint8List data;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      flags,
+      data,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static Iso15693ResponsePigeon decode(Object result) {
+    result as List<Object?>;
+    return Iso15693ResponsePigeon(
+      flags: (result[0]! as List<Object?>).cast<Iso15693ResponseFlagPigeon>(),
+      data: result[1]! as Uint8List,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! Iso15693ResponsePigeon || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(flags, other.flags) && _deepEquals(data, other.data);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'Iso15693ResponsePigeon(flags: $flags, data: $data)';
+  }
+}
+
+/// `NFCTagCommandConfiguration`, which lets CoreNFC retry inside its own session rather
+/// than paying a Dart round trip per attempt. iOS only.
+///
+/// Only two ISO 15693 commands accept one; there is no general form.
+class Iso15693CommandConfigurationPigeon {
+  Iso15693CommandConfigurationPigeon({
+    required this.maximumRetries,
+    required this.retryIntervalSeconds,
+  });
+
+  int maximumRetries;
+
+  /// `NFCTagCommandConfiguration.retryInterval`, in seconds.
+  double retryIntervalSeconds;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      maximumRetries,
+      retryIntervalSeconds,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static Iso15693CommandConfigurationPigeon decode(Object result) {
+    result as List<Object?>;
+    return Iso15693CommandConfigurationPigeon(
+      maximumRetries: result[0]! as int,
+      retryIntervalSeconds: result[1]! as double,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! Iso15693CommandConfigurationPigeon || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(maximumRetries, other.maximumRetries) &&
+        _deepEquals(retryIntervalSeconds, other.retryIntervalSeconds);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'Iso15693CommandConfigurationPigeon(maximumRetries: $maximumRetries, retryIntervalSeconds: $retryIntervalSeconds)';
   }
 }
 
@@ -2634,152 +2795,167 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is AndroidTechPigeon) {
       buffer.putUint8(138);
       writeValue(buffer, value.index);
-    } else if (value is TypeNameFormatPigeon) {
+    } else if (value is CardEmulationCategoryPigeon) {
       buffer.putUint8(139);
       writeValue(buffer, value.index);
-    } else if (value is MifareClassicTypePigeon) {
+    } else if (value is AidSelectionModePigeon) {
       buffer.putUint8(140);
       writeValue(buffer, value.index);
-    } else if (value is MifareUltralightTypePigeon) {
+    } else if (value is TypeNameFormatPigeon) {
       buffer.putUint8(141);
       writeValue(buffer, value.index);
-    } else if (value is NfcBarcodeTypePigeon) {
+    } else if (value is MifareClassicTypePigeon) {
       buffer.putUint8(142);
       writeValue(buffer, value.index);
-    } else if (value is MiFareFamilyPigeon) {
+    } else if (value is MifareUltralightTypePigeon) {
       buffer.putUint8(143);
       writeValue(buffer, value.index);
-    } else if (value is NdefStatusPigeon) {
+    } else if (value is NfcBarcodeTypePigeon) {
       buffer.putUint8(144);
       writeValue(buffer, value.index);
-    } else if (value is Iso15693RequestFlagPigeon) {
+    } else if (value is MiFareFamilyPigeon) {
       buffer.putUint8(145);
       writeValue(buffer, value.index);
-    } else if (value is FeliCaPollingRequestCodePigeon) {
+    } else if (value is NdefStatusPigeon) {
       buffer.putUint8(146);
       writeValue(buffer, value.index);
-    } else if (value is FeliCaPollingTimeSlotPigeon) {
+    } else if (value is Iso15693RequestFlagPigeon) {
       buffer.putUint8(147);
       writeValue(buffer, value.index);
-    } else if (value is VasModePigeon) {
+    } else if (value is Iso15693ResponseFlagPigeon) {
       buffer.putUint8(148);
       writeValue(buffer, value.index);
-    } else if (value is VasResponseErrorCodePigeon) {
+    } else if (value is FeliCaPollingRequestCodePigeon) {
       buffer.putUint8(149);
       writeValue(buffer, value.index);
-    } else if (value is ErrorSourcePigeon) {
+    } else if (value is FeliCaPollingTimeSlotPigeon) {
       buffer.putUint8(150);
       writeValue(buffer, value.index);
-    } else if (value is SessionKindPigeon) {
+    } else if (value is VasModePigeon) {
       buffer.putUint8(151);
       writeValue(buffer, value.index);
-    } else if (value is AndroidErrorCodePigeon) {
+    } else if (value is VasResponseErrorCodePigeon) {
       buffer.putUint8(152);
       writeValue(buffer, value.index);
-    } else if (value is ReaderErrorCodePigeon) {
+    } else if (value is ErrorSourcePigeon) {
       buffer.putUint8(153);
       writeValue(buffer, value.index);
-    } else if (value is NdefRecordPigeon) {
+    } else if (value is SessionKindPigeon) {
       buffer.putUint8(154);
-      writeValue(buffer, value.encode());
-    } else if (value is NdefMessagePigeon) {
+      writeValue(buffer, value.index);
+    } else if (value is AndroidErrorCodePigeon) {
       buffer.putUint8(155);
-      writeValue(buffer, value.encode());
-    } else if (value is SessionConfigPigeon) {
+      writeValue(buffer, value.index);
+    } else if (value is ReaderErrorCodePigeon) {
       buffer.putUint8(156);
-      writeValue(buffer, value.encode());
-    } else if (value is PollingFramePigeon) {
+      writeValue(buffer, value.index);
+    } else if (value is NdefRecordPigeon) {
       buffer.putUint8(157);
       writeValue(buffer, value.encode());
-    } else if (value is AvailableNfcAntennaPigeon) {
+    } else if (value is NdefMessagePigeon) {
       buffer.putUint8(158);
       writeValue(buffer, value.encode());
-    } else if (value is NfcAntennaInfoPigeon) {
+    } else if (value is SessionConfigPigeon) {
       buffer.putUint8(159);
       writeValue(buffer, value.encode());
-    } else if (value is NfcEventPigeon) {
+    } else if (value is PollingFramePigeon) {
       buffer.putUint8(160);
       writeValue(buffer, value.encode());
-    } else if (value is TagIntentSetupPigeon) {
+    } else if (value is AvailableNfcAntennaPigeon) {
       buffer.putUint8(161);
       writeValue(buffer, value.encode());
-    } else if (value is NfcAPigeon) {
+    } else if (value is NfcAntennaInfoPigeon) {
       buffer.putUint8(162);
       writeValue(buffer, value.encode());
-    } else if (value is NfcBPigeon) {
+    } else if (value is NfcEventPigeon) {
       buffer.putUint8(163);
       writeValue(buffer, value.encode());
-    } else if (value is NfcFPigeon) {
+    } else if (value is TagIntentSetupPigeon) {
       buffer.putUint8(164);
       writeValue(buffer, value.encode());
-    } else if (value is NfcVPigeon) {
+    } else if (value is NfcAPigeon) {
       buffer.putUint8(165);
       writeValue(buffer, value.encode());
-    } else if (value is IsoDepPigeon) {
+    } else if (value is NfcBPigeon) {
       buffer.putUint8(166);
       writeValue(buffer, value.encode());
-    } else if (value is MifareClassicPigeon) {
+    } else if (value is NfcFPigeon) {
       buffer.putUint8(167);
       writeValue(buffer, value.encode());
-    } else if (value is MifareUltralightPigeon) {
+    } else if (value is NfcVPigeon) {
       buffer.putUint8(168);
       writeValue(buffer, value.encode());
-    } else if (value is NfcBarcodePigeon) {
+    } else if (value is IsoDepPigeon) {
       buffer.putUint8(169);
       writeValue(buffer, value.encode());
-    } else if (value is NdefAndroidPigeon) {
+    } else if (value is MifareClassicPigeon) {
       buffer.putUint8(170);
       writeValue(buffer, value.encode());
-    } else if (value is NdefIosPigeon) {
+    } else if (value is MifareUltralightPigeon) {
       buffer.putUint8(171);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaPigeon) {
+    } else if (value is NfcBarcodePigeon) {
       buffer.putUint8(172);
       writeValue(buffer, value.encode());
-    } else if (value is Iso7816Pigeon) {
+    } else if (value is NdefAndroidPigeon) {
       buffer.putUint8(173);
       writeValue(buffer, value.encode());
-    } else if (value is Iso15693Pigeon) {
+    } else if (value is NdefIosPigeon) {
       buffer.putUint8(174);
       writeValue(buffer, value.encode());
-    } else if (value is MiFarePigeon) {
+    } else if (value is FeliCaPigeon) {
       buffer.putUint8(175);
       writeValue(buffer, value.encode());
-    } else if (value is TagPigeon) {
+    } else if (value is Iso7816Pigeon) {
       buffer.putUint8(176);
       writeValue(buffer, value.encode());
-    } else if (value is Iso7816ResponseApduPigeon) {
+    } else if (value is Iso15693Pigeon) {
       buffer.putUint8(177);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaPollingResponsePigeon) {
+    } else if (value is MiFarePigeon) {
       buffer.putUint8(178);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaStatusFlagPigeon) {
+    } else if (value is TagPigeon) {
       buffer.putUint8(179);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaReadWithoutEncryptionResponsePigeon) {
+    } else if (value is Iso7816ResponseApduPigeon) {
       buffer.putUint8(180);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaRequestServiceV2ResponsePigeon) {
+    } else if (value is FeliCaPollingResponsePigeon) {
       buffer.putUint8(181);
       writeValue(buffer, value.encode());
-    } else if (value is FeliCaRequestSpecificationVersionResponsePigeon) {
+    } else if (value is FeliCaStatusFlagPigeon) {
       buffer.putUint8(182);
       writeValue(buffer, value.encode());
-    } else if (value is Iso15693SystemInfoPigeon) {
+    } else if (value is FeliCaReadWithoutEncryptionResponsePigeon) {
       buffer.putUint8(183);
       writeValue(buffer, value.encode());
-    } else if (value is QueryNdefStatusResponsePigeon) {
+    } else if (value is FeliCaRequestServiceV2ResponsePigeon) {
       buffer.putUint8(184);
       writeValue(buffer, value.encode());
-    } else if (value is VasCommandConfigurationPigeon) {
+    } else if (value is FeliCaRequestSpecificationVersionResponsePigeon) {
       buffer.putUint8(185);
       writeValue(buffer, value.encode());
-    } else if (value is VasResponsePigeon) {
+    } else if (value is Iso15693SystemInfoPigeon) {
       buffer.putUint8(186);
       writeValue(buffer, value.encode());
-    } else if (value is NfcErrorPigeon) {
+    } else if (value is Iso15693ResponsePigeon) {
       buffer.putUint8(187);
+      writeValue(buffer, value.encode());
+    } else if (value is Iso15693CommandConfigurationPigeon) {
+      buffer.putUint8(188);
+      writeValue(buffer, value.encode());
+    } else if (value is QueryNdefStatusResponsePigeon) {
+      buffer.putUint8(189);
+      writeValue(buffer, value.encode());
+    } else if (value is VasCommandConfigurationPigeon) {
+      buffer.putUint8(190);
+      writeValue(buffer, value.encode());
+    } else if (value is VasResponsePigeon) {
+      buffer.putUint8(191);
+      writeValue(buffer, value.encode());
+    } else if (value is NfcErrorPigeon) {
+      buffer.putUint8(192);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -2821,116 +2997,129 @@ class _PigeonCodec extends StandardMessageCodec {
         return value == null ? null : AndroidTechPigeon.values[value];
       case 139:
         final value = readValue(buffer) as int?;
-        return value == null ? null : TypeNameFormatPigeon.values[value];
+        return value == null ? null : CardEmulationCategoryPigeon.values[value];
       case 140:
         final value = readValue(buffer) as int?;
-        return value == null ? null : MifareClassicTypePigeon.values[value];
+        return value == null ? null : AidSelectionModePigeon.values[value];
       case 141:
         final value = readValue(buffer) as int?;
-        return value == null ? null : MifareUltralightTypePigeon.values[value];
+        return value == null ? null : TypeNameFormatPigeon.values[value];
       case 142:
         final value = readValue(buffer) as int?;
-        return value == null ? null : NfcBarcodeTypePigeon.values[value];
+        return value == null ? null : MifareClassicTypePigeon.values[value];
       case 143:
         final value = readValue(buffer) as int?;
-        return value == null ? null : MiFareFamilyPigeon.values[value];
+        return value == null ? null : MifareUltralightTypePigeon.values[value];
       case 144:
         final value = readValue(buffer) as int?;
-        return value == null ? null : NdefStatusPigeon.values[value];
+        return value == null ? null : NfcBarcodeTypePigeon.values[value];
       case 145:
         final value = readValue(buffer) as int?;
-        return value == null ? null : Iso15693RequestFlagPigeon.values[value];
+        return value == null ? null : MiFareFamilyPigeon.values[value];
       case 146:
         final value = readValue(buffer) as int?;
-        return value == null ? null : FeliCaPollingRequestCodePigeon.values[value];
+        return value == null ? null : NdefStatusPigeon.values[value];
       case 147:
         final value = readValue(buffer) as int?;
-        return value == null ? null : FeliCaPollingTimeSlotPigeon.values[value];
+        return value == null ? null : Iso15693RequestFlagPigeon.values[value];
       case 148:
         final value = readValue(buffer) as int?;
-        return value == null ? null : VasModePigeon.values[value];
+        return value == null ? null : Iso15693ResponseFlagPigeon.values[value];
       case 149:
         final value = readValue(buffer) as int?;
-        return value == null ? null : VasResponseErrorCodePigeon.values[value];
+        return value == null ? null : FeliCaPollingRequestCodePigeon.values[value];
       case 150:
         final value = readValue(buffer) as int?;
-        return value == null ? null : ErrorSourcePigeon.values[value];
+        return value == null ? null : FeliCaPollingTimeSlotPigeon.values[value];
       case 151:
         final value = readValue(buffer) as int?;
-        return value == null ? null : SessionKindPigeon.values[value];
+        return value == null ? null : VasModePigeon.values[value];
       case 152:
         final value = readValue(buffer) as int?;
-        return value == null ? null : AndroidErrorCodePigeon.values[value];
+        return value == null ? null : VasResponseErrorCodePigeon.values[value];
       case 153:
         final value = readValue(buffer) as int?;
-        return value == null ? null : ReaderErrorCodePigeon.values[value];
+        return value == null ? null : ErrorSourcePigeon.values[value];
       case 154:
-        return NdefRecordPigeon.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : SessionKindPigeon.values[value];
       case 155:
-        return NdefMessagePigeon.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : AndroidErrorCodePigeon.values[value];
       case 156:
-        return SessionConfigPigeon.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : ReaderErrorCodePigeon.values[value];
       case 157:
-        return PollingFramePigeon.decode(readValue(buffer)!);
+        return NdefRecordPigeon.decode(readValue(buffer)!);
       case 158:
-        return AvailableNfcAntennaPigeon.decode(readValue(buffer)!);
+        return NdefMessagePigeon.decode(readValue(buffer)!);
       case 159:
-        return NfcAntennaInfoPigeon.decode(readValue(buffer)!);
+        return SessionConfigPigeon.decode(readValue(buffer)!);
       case 160:
-        return NfcEventPigeon.decode(readValue(buffer)!);
+        return PollingFramePigeon.decode(readValue(buffer)!);
       case 161:
-        return TagIntentSetupPigeon.decode(readValue(buffer)!);
+        return AvailableNfcAntennaPigeon.decode(readValue(buffer)!);
       case 162:
-        return NfcAPigeon.decode(readValue(buffer)!);
+        return NfcAntennaInfoPigeon.decode(readValue(buffer)!);
       case 163:
-        return NfcBPigeon.decode(readValue(buffer)!);
+        return NfcEventPigeon.decode(readValue(buffer)!);
       case 164:
-        return NfcFPigeon.decode(readValue(buffer)!);
+        return TagIntentSetupPigeon.decode(readValue(buffer)!);
       case 165:
-        return NfcVPigeon.decode(readValue(buffer)!);
+        return NfcAPigeon.decode(readValue(buffer)!);
       case 166:
-        return IsoDepPigeon.decode(readValue(buffer)!);
+        return NfcBPigeon.decode(readValue(buffer)!);
       case 167:
-        return MifareClassicPigeon.decode(readValue(buffer)!);
+        return NfcFPigeon.decode(readValue(buffer)!);
       case 168:
-        return MifareUltralightPigeon.decode(readValue(buffer)!);
+        return NfcVPigeon.decode(readValue(buffer)!);
       case 169:
-        return NfcBarcodePigeon.decode(readValue(buffer)!);
+        return IsoDepPigeon.decode(readValue(buffer)!);
       case 170:
-        return NdefAndroidPigeon.decode(readValue(buffer)!);
+        return MifareClassicPigeon.decode(readValue(buffer)!);
       case 171:
-        return NdefIosPigeon.decode(readValue(buffer)!);
+        return MifareUltralightPigeon.decode(readValue(buffer)!);
       case 172:
-        return FeliCaPigeon.decode(readValue(buffer)!);
+        return NfcBarcodePigeon.decode(readValue(buffer)!);
       case 173:
-        return Iso7816Pigeon.decode(readValue(buffer)!);
+        return NdefAndroidPigeon.decode(readValue(buffer)!);
       case 174:
-        return Iso15693Pigeon.decode(readValue(buffer)!);
+        return NdefIosPigeon.decode(readValue(buffer)!);
       case 175:
-        return MiFarePigeon.decode(readValue(buffer)!);
+        return FeliCaPigeon.decode(readValue(buffer)!);
       case 176:
-        return TagPigeon.decode(readValue(buffer)!);
+        return Iso7816Pigeon.decode(readValue(buffer)!);
       case 177:
-        return Iso7816ResponseApduPigeon.decode(readValue(buffer)!);
+        return Iso15693Pigeon.decode(readValue(buffer)!);
       case 178:
-        return FeliCaPollingResponsePigeon.decode(readValue(buffer)!);
+        return MiFarePigeon.decode(readValue(buffer)!);
       case 179:
-        return FeliCaStatusFlagPigeon.decode(readValue(buffer)!);
+        return TagPigeon.decode(readValue(buffer)!);
       case 180:
-        return FeliCaReadWithoutEncryptionResponsePigeon.decode(readValue(buffer)!);
+        return Iso7816ResponseApduPigeon.decode(readValue(buffer)!);
       case 181:
-        return FeliCaRequestServiceV2ResponsePigeon.decode(readValue(buffer)!);
+        return FeliCaPollingResponsePigeon.decode(readValue(buffer)!);
       case 182:
-        return FeliCaRequestSpecificationVersionResponsePigeon.decode(readValue(buffer)!);
+        return FeliCaStatusFlagPigeon.decode(readValue(buffer)!);
       case 183:
-        return Iso15693SystemInfoPigeon.decode(readValue(buffer)!);
+        return FeliCaReadWithoutEncryptionResponsePigeon.decode(readValue(buffer)!);
       case 184:
-        return QueryNdefStatusResponsePigeon.decode(readValue(buffer)!);
+        return FeliCaRequestServiceV2ResponsePigeon.decode(readValue(buffer)!);
       case 185:
-        return VasCommandConfigurationPigeon.decode(readValue(buffer)!);
+        return FeliCaRequestSpecificationVersionResponsePigeon.decode(readValue(buffer)!);
       case 186:
-        return VasResponsePigeon.decode(readValue(buffer)!);
+        return Iso15693SystemInfoPigeon.decode(readValue(buffer)!);
       case 187:
+        return Iso15693ResponsePigeon.decode(readValue(buffer)!);
+      case 188:
+        return Iso15693CommandConfigurationPigeon.decode(readValue(buffer)!);
+      case 189:
+        return QueryNdefStatusResponsePigeon.decode(readValue(buffer)!);
+      case 190:
+        return VasCommandConfigurationPigeon.decode(readValue(buffer)!);
+      case 191:
+        return VasResponsePigeon.decode(readValue(buffer)!);
+      case 192:
         return NfcErrorPigeon.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -3130,6 +3319,71 @@ class NfcAndroidHostApi {
   Future<bool> isSecureNfcEnabled() async {
     final pigeonVar_channelName =
         'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isSecureNfcEnabled$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Whether the device implements the Android 15 reader-option switch. False below API 35.
+  Future<bool> isReaderOptionSupported() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isReaderOptionSupported$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Whether tag *reading* is switched on, which is separate from the adapter being on.
+  ///
+  /// With the adapter on and this off, a session starts and no tag is ever discovered --
+  /// the same shape of silent dead end that [checkTagIntentSetup] answers on the intent
+  /// side. True below API 35, where the switch does not exist.
+  Future<bool> isReaderOptionEnabled() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.isReaderOptionEnabled$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Opens the system NFC settings screen. False when there is no activity to start it
+  /// from, or the device has no such screen.
+  Future<bool> openNfcSettings() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.openNfcSettings$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -3448,6 +3702,32 @@ class NfcAndroidHostApi {
       binaryMessenger: pigeonVar_binaryMessenger,
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, tech, timeout]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// Closes the connection to the tag and opens it again, which reselects it in the RF
+  /// field.
+  ///
+  /// The plugin reuses a connection across calls, and `isConnected` is a local flag: a
+  /// Mifare Classic sector authentication that fails halts the tag while the flag still
+  /// reads true, so every later command on that tag fails too. This is the only way out
+  /// short of tearing down the session. It deliberately discards sector authentication and
+  /// any timeout that was set.
+  Future<void> resetTech(String handle, AndroidTechPigeon tech) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.resetTech$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, tech]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     _extractReplyValueOrThrow(
@@ -3798,6 +4078,129 @@ class NfcAndroidHostApi {
     );
   }
 
+  /// Whether the controller can route an AID *prefix* at all. Registering a prefix on
+  /// hardware that cannot simply fails, with nothing to distinguish it from a bad AID.
+  Future<bool> hceSupportsAidPrefixRegistration() async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSupportsAidPrefixRegistration$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Whether [hceSetPreferredService] has any effect for this category. Always false for
+  /// payment on a device where the user's wallet choice is final.
+  Future<bool> hceCategoryAllowsForegroundPreference(CardEmulationCategoryPigeon category) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceCategoryAllowsForegroundPreference$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[category]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// How the platform picks between apps that claim the same AID in this category.
+  Future<AidSelectionModePigeon> hceSelectionModeForCategory(CardEmulationCategoryPigeon category) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceSelectionModeForCategory$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[category]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as AidSelectionModePigeon;
+  }
+
+  /// Whether this app's service is the user's default for the category.
+  Future<bool> hceIsDefaultServiceForCategory(CardEmulationCategoryPigeon category) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsDefaultServiceForCategory$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[category]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// Whether this app's service is the one a reader selecting [aid] would reach.
+  Future<bool> hceIsDefaultServiceForAid(String aid) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsDefaultServiceForAid$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[aid]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// The AIDs currently registered against this app's service, static and dynamic together
+  /// -- the readback for [hceRegisterAids].
+  Future<List<String>> hceAidsForService(CardEmulationCategoryPigeon category) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceAidsForService$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[category]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return (pigeonVar_replyValue! as List<Object?>).cast<String>();
+  }
+
   Future<bool> hceIsObserveModeSupported() async {
     final pigeonVar_channelName =
         'dev.flutter.pigeon.nfc_util.NfcAndroidHostApi.hceIsObserveModeSupported$pigeonVar_messageChannelSuffix';
@@ -4022,6 +4425,29 @@ class NfcIosHostApi {
       binaryMessenger: pigeonVar_binaryMessenger,
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as bool;
+  }
+
+  /// `NFCTag.isAvailable` for the tag behind [handle].
+  ///
+  /// Asks whether *this* tag is still connected and reachable, not whether some tag is in
+  /// the field. False for a handle the session has already let go of.
+  Future<bool> tagIsAvailable(String handle) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.tagIsAvailable$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
@@ -4817,6 +5243,349 @@ class NfcIosHostApi {
       flags,
       customCommandCode,
       customRequestParameters,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as Uint8List;
+  }
+
+  /// The general ISO 15693-3 request: request flag, command code, optional data.
+  ///
+  /// The whole frame must stay within 256 bytes.
+  Future<Iso15693ResponsePigeon> iso15693SendRequest(String handle, int flags, int commandCode, Uint8List? data) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693SendRequest$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags, commandCode, data]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as Iso15693ResponsePigeon;
+  }
+
+  /// Fast read multiple blocks (0x2D).
+  Future<List<Uint8List>> iso15693FastReadMultipleBlocks(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int blockNumber,
+    int numberOfBlocks,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693FastReadMultipleBlocks$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      flags,
+      blockNumber,
+      numberOfBlocks,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return (pigeonVar_replyValue! as List<Object?>).cast<Uint8List>();
+  }
+
+  /// Extended fast read multiple blocks (0x3D).
+  Future<List<Uint8List>> iso15693ExtendedFastReadMultipleBlocks(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int blockNumber,
+    int numberOfBlocks,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ExtendedFastReadMultipleBlocks$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      flags,
+      blockNumber,
+      numberOfBlocks,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return (pigeonVar_replyValue! as List<Object?>).cast<Uint8List>();
+  }
+
+  /// Extended write multiple blocks (0x34).
+  Future<void> iso15693ExtendedWriteMultipleBlocks(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int blockNumber,
+    int numberOfBlocks,
+    List<Uint8List> dataBlocks,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ExtendedWriteMultipleBlocks$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      flags,
+      blockNumber,
+      numberOfBlocks,
+      dataBlocks,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// Extended get multiple block security status (0x3C).
+  Future<List<int>> iso15693ExtendedGetMultipleBlockSecurityStatus(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int blockNumber,
+    int numberOfBlocks,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ExtendedGetMultipleBlockSecurityStatus$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      flags,
+      blockNumber,
+      numberOfBlocks,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return (pigeonVar_replyValue! as List<Object?>).cast<int>();
+  }
+
+  /// Authenticate (0x35), per ISO/IEC 29167. The in-process reply is returned unprocessed.
+  Future<Iso15693ResponsePigeon> iso15693Authenticate(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int cryptoSuiteIdentifier,
+    Uint8List message,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693Authenticate$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      flags,
+      cryptoSuiteIdentifier,
+      message,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as Iso15693ResponsePigeon;
+  }
+
+  /// Key update (0x36). The message content follows the crypto suite used to authenticate.
+  Future<Iso15693ResponsePigeon> iso15693KeyUpdate(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int keyIdentifier,
+    Uint8List message,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693KeyUpdate$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      flags,
+      keyIdentifier,
+      message,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as Iso15693ResponsePigeon;
+  }
+
+  /// Challenge (0x39). Answers nothing on success; read the result with
+  /// [iso15693ReadBuffer].
+  Future<void> iso15693Challenge(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+    int cryptoSuiteIdentifier,
+    Uint8List message,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693Challenge$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      flags,
+      cryptoSuiteIdentifier,
+      message,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: true,
+    );
+  }
+
+  /// Read buffer (0x3A).
+  Future<Iso15693ResponsePigeon> iso15693ReadBuffer(String handle, List<Iso15693RequestFlagPigeon> flags) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ReadBuffer$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as Iso15693ResponsePigeon;
+  }
+
+  /// `getSystemInfoAndUIDWithRequestFlag`, the iOS 14 replacement for the selector
+  /// [iso15693GetSystemInfo] used until 3.3.0. Returns the UID as well.
+  Future<Iso15693SystemInfoPigeon> iso15693GetSystemInfoAndUid(
+    String handle,
+    List<Iso15693RequestFlagPigeon> flags,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693GetSystemInfoAndUid$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[handle, flags]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return pigeonVar_replyValue! as Iso15693SystemInfoPigeon;
+  }
+
+  /// Read multiple blocks with a retry configuration, so CoreNFC retries inside its own
+  /// session. [chunkSize] is how many blocks each request asks for.
+  Future<List<Uint8List>> iso15693ReadMultipleBlocksWithConfiguration(
+    String handle,
+    int blockNumber,
+    int numberOfBlocks,
+    int chunkSize,
+    Iso15693CommandConfigurationPigeon configuration,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693ReadMultipleBlocksWithConfiguration$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      blockNumber,
+      numberOfBlocks,
+      chunkSize,
+      configuration,
+    ]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+      pigeonVar_replyList,
+      pigeonVar_channelName,
+      isNullValid: false,
+    );
+    return (pigeonVar_replyValue! as List<Object?>).cast<Uint8List>();
+  }
+
+  /// Custom command with a retry configuration. [manufacturerCode] is the 8-bit IC
+  /// manufacturer code CoreNFC puts in the frame.
+  Future<Uint8List> iso15693CustomCommandWithConfiguration(
+    String handle,
+    int manufacturerCode,
+    int customCommandCode,
+    Uint8List customRequestParameters,
+    Iso15693CommandConfigurationPigeon configuration,
+  ) async {
+    final pigeonVar_channelName =
+        'dev.flutter.pigeon.nfc_util.NfcIosHostApi.iso15693CustomCommandWithConfiguration$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[
+      handle,
+      manufacturerCode,
+      customCommandCode,
+      customRequestParameters,
+      configuration,
     ]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 

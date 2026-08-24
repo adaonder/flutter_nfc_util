@@ -12,6 +12,7 @@
 /// ```
 library;
 
+export 'src/apdu/response_apdu.dart' show Iso7816ResponseApdu;
 export 'src/ios/platform.dart' show NfcUtilIos, VasCommandConfiguration, VasMode, VasResponse, VasResponseErrorCode;
 export 'src/ios/tags.dart'
     show
@@ -24,10 +25,12 @@ export 'src/ios/tags.dart'
         FeliCaRequestSpecificationVersionResponse,
         FeliCaStatusFlag,
         Iso15693,
+        Iso15693CommandConfiguration,
         Iso15693RequestFlag,
+        Iso15693Response,
+        Iso15693ResponseFlag,
         Iso15693SystemInfo,
         Iso7816,
-        Iso7816ResponseApdu,
         MiFare,
         MiFareFamily,
         NdefIos,
