@@ -1,5 +1,100 @@
 ## 3.3.0
 
+### Upgrading from 3.2.0
+
+Nothing was removed and nothing was renamed. Bump the version and you are done -- unless your
+app does one of the four things below.
+
+1. **Answer a reader only from inside `onApduReceived`.**
+
+   Calling `HostCardEmulation.respond()` at any other moment used to crash the app. Now it
+   does nothing and writes a line to logcat.
+
+   The moments that count as "any other" are a polling frame arriving while observe mode is
+   on, and a link that has already dropped. The framework only gives the service somewhere to
+   send an answer when a command APDU arrives, so outside that window there is nothing to
+   answer into. Not crashing costs you the signal: nothing in Dart says the answer went
+   nowhere.
+
+2. **On iOS, never ask for zero blocks.**
+
+   If you work `numberOfBlocks` out from a list or a calculation, check it is not zero first.
+   The ISO 15693 range commands now refuse an empty or negative range and throw
+   `PlatformException(code: 'invalidParameter')`.
+
+   They used to hand the numbers straight to CoreNFC as an `NSRange`, which has no defined
+   meaning when the length is zero or the start is negative. Ranges up to 65536 blocks are
+   untouched, so extended block numbers behave exactly as they did.
+
+3. **`NdefMessage.toBytes()` can now throw.**
+
+   This only reaches you if you build records yourself with `NdefRecord.fromParts` and give
+   one a type or identifier longer than 255 bytes. That raises an `ArgumentError` now.
+
+   It used to keep the low eight bits and write the message anyway, which produced bytes no
+   reader could decode -- including this package's own parser. Anything read off a tag is safe
+   by construction: the length arrives in a one-byte field, so it cannot exceed 255.
+
+4. **`Iso15693.readMultipleBlocksWithConfiguration` can hand back fewer blocks than you asked
+   for, including none.**
+
+   Handle a short list rather than indexing into it.
+
+   An empty answer used to crash the app instead of returning. This call also needs an
+   entitlement Apple no longer grants, so most apps never reach it at all.
+
+Everything else asks nothing of you. `compileSdk` stays at 36, `minSdk` at 24, the iOS
+deployment target at 15.6, and no value was added to any existing public enum. The startup,
+resume and package-manager costs described under *Crashes, stalls and leaks* get better on
+their own.
+
+### What is new, and what is gone
+
+Nothing is gone. One method is deprecated but still works, one class moved without changing
+where you import it from, and everything else below is new.
+
+The list comes from diffing every public declaration against the 3.2.0 tag, rather than from
+reading these notes back.
+
+**Removed:** nothing. No member of the public API was deleted or renamed.
+
+**Deprecated, still working:** `Iso15693.getSystemInfo`. Use `getSystemInfoAndUid`, which also
+reports the UID. The old one keeps working and answers `uid` as `null`.
+
+**Moved, same import:** `Iso7816ResponseApdu` now lives in the new `package:nfc_util/apdu.dart`
+rather than on the iOS surface, because both platforms speak the protocol.
+`package:nfc_util/ios.dart` still exports it, so no import of yours changes.
+
+**New libraries**
+
+* `package:nfc_util/apdu.dart` -- `CommandApdu` (with `withExpectedResponseLength` and
+  `isExtended`), the sealed `StatusWord` hierarchy (`StatusWordSuccess`, `StatusWordMoreData`,
+  `StatusWordWrongLength`, `StatusWordWarning`, `StatusWordError`, `StatusWordUnrecognised`,
+  `StatusWordErrorReason`), `Iso7816Chaining`, and `Iso7816ResponseApdu.status`.
+* `package:nfc_util/testing.dart` -- `debugReplaceApis`, `fakeNfcTag`, `FakeTech`,
+  `FakeNfcHostApi`, `FakeNfcAndroidHostApi`, `FakeNfcIosHostApi`.
+
+**New on iOS -- ISO 15693.** `sendRequest`, `fastReadMultipleBlocks`,
+`extendedFastReadMultipleBlocks`, `extendedWriteMultipleBlocks`,
+`extendedGetMultipleBlockSecurityStatus`, `authenticate`, `keyUpdate`, `challenge`,
+`readBuffer`, `getSystemInfoAndUid`, `readMultipleBlocksWithConfiguration` and
+`customCommandWithConfiguration`, plus the types `Iso15693Response`, `Iso15693ResponseFlag` and
+`Iso15693CommandConfiguration`.
+
+**New on iOS -- elsewhere.** `NfcUtilIos.tagIsAvailable(tag)` and `Ndef.uncheckedIos(tag)`.
+
+**New on Android.** `isReaderOptionSupported()`, `isReaderOptionEnabled()`, `openNfcSettings()`
+and `reset()` on the tag technologies.
+
+**New on Android -- card emulation queries.** `supportsAidPrefixRegistration()`,
+`aidsForService()`, `isDefaultServiceForCategory()`, `isDefaultServiceForAid()`,
+`categoryAllowsForegroundPreference()` and `selectionModeForCategory()`, with
+`CardEmulationCategory` and `AidSelectionMode`.
+
+**New on both platforms.** `NfcTag.otherTagCount`, and on `MifareClassic` the constants
+`keyDefault`, `keyMifareApplicationDirectory`, `keyNfcForum`, `blockSize`, `sizeMini`, `size1K`,
+`size2K` and `size4K`.
+
 The audit release. Nothing here came from a competing package -- a survey of the Flutter,
 React Native, Capacitor and Cordova NFC libraries turned up no capability this one lacked.
 What it turned up instead was surface sitting unclaimed in Apple's and Google's own SDKs,
@@ -138,12 +233,120 @@ deprecated without being removed.
   deprecated in iOS 14. `getSystemInfoAndUid()` replaces it and returns the tag UID as well.
   The old one keeps working and reports `uid` as `null`.
 
+### Crashes, stalls and leaks
+
+A pass over the plugin's own threading and lifecycle, separate from the capability work above.
+Two of these crashed an app outright; the rest cost time or memory on paths apps take
+constantly.
+
+None of it was reachable by the analyzer or the test suite. Every one was present while
+`flutter analyze` was clean and the whole suite was green.
+
+* **A tag that answered a block read with nothing took the app down.** *(Fix, iOS.)*
+  `readMultipleBlocksWithConfiguration` crashed on an empty answer. It hands back an empty
+  list now.
+
+  It was an unrecoverable trap rather than an error an app could catch. That call returns one
+  concatenated `Data` instead of an array, so the block size has to be recovered by division
+  -- and an empty answer made the divisor zero. A zero step reaches `stride(by:)` and its
+  "Stride size must not be zero" precondition, which is compiled into release builds as well
+  as debug ones. Reproduced against the real standard library before and after: `SIGTRAP`,
+  then no blocks.
+
+* **Answering a reader at the wrong moment took the process down.** *(Fix, Android -- host
+  card emulation.)* `HostCardEmulation.respond()` crashed unless a command APDU was in flight.
+  It is a logged no-op now.
+
+  `sendResponseApdu` writes to a `Messenger` the framework only hands over with a command
+  APDU, and this was the one platform call in the plugin that was not wrapped -- so answering
+  a polling frame while observe mode was on, or answering after the link had dropped, threw
+  out of a Pigeon handler that does not catch. The service also drops its own static reference
+  in `onDestroy` now, which `onDeactivated` alone did not cover: a component can be stopped
+  with no reader exchange to end.
+
+* **Becoming the preferred card wrote to the package manager every single time.** *(Fix,
+  Android -- host card emulation.)* `setPreferredService(true)` now writes only when something
+  actually changes, and reads the current state at most once per process.
+
+  Enabling the emulation component takes the package manager's write lock, schedules a
+  settings flush and broadcasts -- and this package's own documentation tells apps to make
+  that call on every resume. The setting is persistent, so it was nearly always already what
+  the call was about to ask for.
+
+* **`checkTagIntentSetup()` re-ran six package-manager queries on every call.** *(Fix,
+  Android.)* It works the answer out once now.
+
+  The probe reads the manifest, which cannot change without the process restarting, so
+  repeating it bought nothing. The call is still synchronous and still does that first pass on
+  the platform thread; making it asynchronous would mean regenerating the whole Pigeon layer,
+  which is a release of its own.
+
+* **Every Flutter engine paid for the NFC adapter, even the ones that never touch NFC.**
+  *(Fix, Android.)* The adapter is resolved on first use now instead of at plugin attach.
+
+  `NfcAdapter.getDefaultAdapter` is a feature check plus a binder lookup, and every engine
+  performs an attach -- including the background engines other plugins spin up for push
+  messages and scheduled work. An app that merely depends on this package was paying for it
+  there.
+
+* **The ISO 15693 range commands checked nothing.** *(Fix, iOS.)* They share one guard now and
+  report a bad range as `invalidParameter`.
+
+  Every single-block command already narrowed its block number and reported an out-of-range
+  one; the eight range commands built an `NSRange` straight from the wire values, so a
+  negative block number or a zero-length range reached CoreNFC with no defined reading. The
+  guard's ceiling is the extended commands' 16-bit block address -- deliberately wider than
+  the 0...255 the short commands can reach, because a range this package refuses is one the
+  tag never gets to answer.
+
+* **A tag that launched the app leaked a handle on every activity rebuild.** *(Fix, Android.)*
+  The one being replaced is released now.
+
+  The launch intent is read once per attach, and an activity torn down and rebuilt inside a
+  live process hands the same intent over again -- so each rebuild added a handle nothing ever
+  released. A handle you already took through `takeInitialTag` is untouched.
+
+* **`NdefMessage.toBytes()` would rather fail than write a message nothing can read.**
+  *(Behaviour change.)* A type or identifier over 255 bytes raises an `ArgumentError` instead
+  of being silently truncated.
+
+  `TYPE_LENGTH` and `ID_LENGTH` are one byte each. The validating constructor has always
+  refused anything longer, but `NdefRecord.fromParts` -- the decode path, which has to
+  represent whatever a tag holds -- does not, and the encoder was taking the low eight bits.
+  It now raises in the same words the constructor uses. Only a hand-built record reaches it:
+  nothing decoded off a tag can carry a type or identifier that long, because both arrive
+  through that same one-byte field.
+
+* **`TextRecord.create` and `MimeRecord.create` now name the argument they refuse.** *(Fix.)*
+  Same inputs rejected as before; only the error message changes.
+
+  Both encoded to ASCII before checking anything, so a non-ASCII language code or media type
+  surfaced as `dart:convert`'s "Contains invalid characters." -- which names neither the
+  parameter nor the rule.
+
+* **The example clears the handlers it sets.** *(Example.)* And it catches the failure of the
+  APDU answer it cannot await.
+
+  `onTagFromIntent` and `onNdefFromBackground` write to a process-wide router, so a closure
+  capturing the `State` kept it, and the log it holds, alive past `dispose`. The `mounted`
+  guard made a stale handler harmless, not free. The unawaited answer would otherwise surface
+  as an unhandled async error with nothing to connect it to the tap that caused it.
+
+`NfcAdapter.enableReaderMode` and `disableReaderMode` stay on the platform thread on purpose,
+and now say so in the code. Both are bound to a *resumed* activity and the platform applies
+them through the activity lifecycle, so moving them off it would race a rotation or a pause
+and leave the controller polling for a session that is gone, or not polling for one that is
+not.
+
 ### Not verified on hardware
 
 Everything above passes the ten test layers, including a real CoreNFC build. None of it has
 touched a card. The ISO 15693 security commands need a tag that implements ISO/IEC 29167,
 `reset()` needs a Mifare Classic card and a wrong key, and the card-emulation queries need a
-reader. `ROADMAP.md` tracks what is still owed a measurement.
+reader. The fixes above are in the same position: the emulation guard wants a reader to
+exercise it, and the Android stalls they remove were found by inspecting which calls cross a
+binder on the platform thread rather than by profiling a handset. `ROADMAP.md` tracks what is
+still owed a measurement.
 
 ## 3.2.0
 

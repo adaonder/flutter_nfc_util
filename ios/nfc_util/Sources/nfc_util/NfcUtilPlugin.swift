@@ -109,6 +109,40 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
     return narrowed
   }
 
+  /// Narrows a wire block range to the `NSRange` the multi-block commands take, reporting
+  /// instead of handing CoreNFC something that cannot mean anything.
+  ///
+  /// Every single-block command runs its block number through [byte]; the range commands ran
+  /// theirs through nothing at all, so a negative block number or a zero-length range reached
+  /// the framework as an `NSRange` with no defined reading. The ceiling is the extended
+  /// commands' 16-bit block address, and it is deliberately generous rather than the 0...255
+  /// the non-extended ones can address: a range this package refuses is one the tag never gets
+  /// to answer, and CoreNFC already reports an unaddressable one as `parameterOutOfBound`.
+  ///
+  /// Both bounds are checked before the sum, which would otherwise overflow -- and trap -- on
+  /// a wire value near `Int64.max`.
+  private static func blockRange<T>(
+    _ blockNumber: Int64,
+    _ numberOfBlocks: Int64,
+    _ completion: @escaping (Result<T, Error>) -> Void
+  ) -> NSRange? {
+    let ceiling: Int64 = 0x1_0000
+    guard blockNumber >= 0, numberOfBlocks >= 1,
+          blockNumber <= ceiling, numberOfBlocks <= ceiling,
+          blockNumber + numberOfBlocks <= ceiling
+    else {
+      TagMapper.onMain {
+        completion(.failure(PigeonError(
+          code: "invalidParameter",
+          message: "blockNumber \(blockNumber) and numberOfBlocks \(numberOfBlocks) are not a block range.",
+          details: nil
+        )))
+      }
+      return nil
+    }
+    return NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+  }
+
   /// Resolves a handle and hands the tag to `body`, or completes with "not found".
   private func withTag<Tag, Value>(
     _ handle: String,
@@ -646,10 +680,11 @@ extension NfcUtilPlugin {
     numberOfBlocks: Int64,
     completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.readMultipleBlocks(
         requestFlags: TagMapper.requestFlags(flags),
-        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+        blockRange: range
       ) { blocks, error in
         Self.finish(blocks, error, completion) { $0.map { FlutterStandardTypedData(bytes: $0) } }
       }
@@ -664,10 +699,11 @@ extension NfcUtilPlugin {
     dataBlocks: [FlutterStandardTypedData],
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.writeMultipleBlocks(
         requestFlags: TagMapper.requestFlags(flags),
-        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks)),
+        blockRange: range,
         dataBlocks: dataBlocks.map { $0.data }
       ) { error in Self.finishVoid(error, completion) }
     }
@@ -680,10 +716,11 @@ extension NfcUtilPlugin {
     numberOfBlocks: Int64,
     completion: @escaping (Result<[Int64], Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.getMultipleBlockSecurityStatus(
         requestFlags: TagMapper.requestFlags(flags),
-        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+        blockRange: range
       ) { status, error in
         Self.finish(status, error, completion) { $0.map { Int64(truncating: $0) } }
       }
@@ -816,10 +853,11 @@ extension NfcUtilPlugin {
     numberOfBlocks: Int64,
     completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.extendedReadMultipleBlocks(
         requestFlags: TagMapper.requestFlags(flags),
-        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+        blockRange: range
       ) { blocks, error in
         Self.finish(blocks, error, completion) { $0.map { FlutterStandardTypedData(bytes: $0) } }
       }
@@ -901,10 +939,11 @@ extension NfcUtilPlugin {
     numberOfBlocks: Int64,
     completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.__fastReadMultipleBlocks(
         with: TagMapper.requestFlags(flags),
-        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+        blockRange: range
       ) { blocks, error in
         Self.finish(blocks, error, completion) { $0.map { FlutterStandardTypedData(bytes: $0) } }
       }
@@ -918,10 +957,11 @@ extension NfcUtilPlugin {
     numberOfBlocks: Int64,
     completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.__extendedFastReadMultipleBlocks(
         with: TagMapper.requestFlags(flags),
-        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+        blockRange: range
       ) { blocks, error in
         Self.finish(blocks, error, completion) { $0.map { FlutterStandardTypedData(bytes: $0) } }
       }
@@ -936,10 +976,11 @@ extension NfcUtilPlugin {
     dataBlocks: [FlutterStandardTypedData],
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.__extendedWriteMultipleBlocks(
         withRequestFlags: TagMapper.requestFlags(flags),
-        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks)),
+        blockRange: range,
         dataBlocks: dataBlocks.map { $0.data }
       ) { error in Self.finishVoid(error, completion) }
     }
@@ -952,10 +993,11 @@ extension NfcUtilPlugin {
     numberOfBlocks: Int64,
     completion: @escaping (Result<[Int64], Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.__extendedGetMultipleBlockSecurityStatus(
         with: TagMapper.requestFlags(flags),
-        blockRange: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+        blockRange: range
       ) { status, error in
         Self.finish(status, error, completion) { $0.map { Int64(truncating: $0) } }
       }
@@ -1068,8 +1110,9 @@ extension NfcUtilPlugin {
     configuration: Iso15693CommandConfigurationPigeon,
     completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
   ) {
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
     let readConfiguration = NFCISO15693ReadMultipleBlocksConfiguration(
-      range: NSRange(location: Int(blockNumber), length: Int(numberOfBlocks)),
+      range: range,
       chunkSize: Int(chunkSize),
       maximumRetries: Int(configuration.maximumRetries),
       retryInterval: configuration.retryIntervalSeconds
@@ -1132,7 +1175,14 @@ extension NfcUtilPlugin {
   /// block size has to be recovered by division. A response that does not divide evenly is
   /// handed back whole rather than sliced at a guessed boundary: a block cut in the wrong
   /// place is worse than an uncut one, because it still looks like data.
+  ///
+  /// An answer with no bytes at all is no blocks, and it has to be caught before the
+  /// division: a block size of zero reaches `stride(by:)`, whose "Stride size must not be
+  /// zero" precondition traps in release builds as well as debug ones -- so a tag that
+  /// answered empty without reporting an error took the app down rather than reading as an
+  /// empty read. Nothing is lost by returning no blocks, because there was nothing to cut.
   private static func splitBlocks(_ data: Data, into count: Int) -> [FlutterStandardTypedData] {
+    guard !data.isEmpty else { return [] }
     guard count > 0, data.count % count == 0 else { return [FlutterStandardTypedData(bytes: data)] }
     let bytes = [UInt8](data)
     let blockSize = bytes.count / count

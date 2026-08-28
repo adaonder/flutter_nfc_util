@@ -442,6 +442,26 @@ void main() {
       expect(() => MimeRecord.create('text/', bytes([1])), throwsArgumentError);
       expect(() => MimeRecord.create('', bytes([1])), throwsArgumentError);
     });
+
+    test('rejects a non-ASCII type by name rather than through the encoder', () {
+      expect(
+        () => MimeRecord.create('image/pn\u011f', bytes([1])),
+        throwsA(isA<ArgumentError>().having((e) => e.name, 'name', 'mimeType')),
+      );
+    });
+  });
+
+  group('TextRecord', () {
+    test('rejects a non-ASCII language code by name rather than through the encoder', () {
+      expect(
+        () => TextRecord.create('merhaba', languageCode: 't\u00fcr'),
+        throwsA(isA<ArgumentError>().having((e) => e.name, 'name', 'languageCode')),
+      );
+    });
+
+    test('still rejects a language code too long for the six-bit field', () {
+      expect(() => TextRecord.create('x', languageCode: 'a' * 64), throwsArgumentError);
+    });
   });
 
   group('ExternalRecord', () {
@@ -465,6 +485,40 @@ void main() {
     test('rejects empty parts', () {
       expect(() => ExternalRecord.create('', 'x', bytes([1])), throwsArgumentError);
       expect(() => ExternalRecord.create('example.com', '', bytes([1])), throwsArgumentError);
+    });
+  });
+
+  group('NdefMessage encoding limits', () {
+    // fromParts is the decode path and skips validation, so it is the only way to build a
+    // record whose type or identifier cannot be spelled in the one-byte wire field.
+    test('refuses to truncate a type longer than TYPE_LENGTH can hold', () {
+      final record = NdefRecord.fromParts(
+        typeNameFormat: NdefTypeNameFormat.media,
+        type: Uint8List(256),
+        identifier: Uint8List(0),
+        payload: bytes([1]),
+      );
+      expect(() => NdefMessage([record]).toBytes(), throwsArgumentError);
+    });
+
+    test('refuses to truncate an identifier longer than ID_LENGTH can hold', () {
+      final record = NdefRecord.fromParts(
+        typeNameFormat: NdefTypeNameFormat.media,
+        type: bytes([0x54]),
+        identifier: Uint8List(256),
+        payload: bytes([1]),
+      );
+      expect(() => NdefMessage([record]).toBytes(), throwsArgumentError);
+    });
+
+    test('encodes the largest type and identifier that do fit', () {
+      final record = NdefRecord.fromParts(
+        typeNameFormat: NdefTypeNameFormat.media,
+        type: Uint8List(255),
+        identifier: Uint8List(255),
+        payload: bytes([1]),
+      );
+      expect(NdefMessage.fromBytes(NdefMessage([record]).toBytes()), NdefMessage([record]));
     });
   });
 

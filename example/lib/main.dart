@@ -134,6 +134,11 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _adapterState?.cancel();
+    // Cleared, not just left: both setters write to a process-wide router, so a closure that
+    // captures this State keeps it -- and the log it holds -- alive for as long as the process
+    // runs. The `mounted` guard in _write makes a stale handler harmless, not free.
+    if (_isAndroid) android.NfcUtilAndroid.instance.onTagFromIntent = null;
+    if (_isIos) ios.NfcUtilIos.instance.onNdefFromBackground = null;
     // registerAids changed state that survives the process being killed, the phone
     // rebooting and the app being updated, and unregisterAids is the only way back. Best
     // effort only: a hard kill still leaves the device enrolled.
@@ -593,7 +598,14 @@ class _HomePageState extends State<HomePage> {
       // A real card would parse the APDU; this answers SELECT with success and everything
       // else with "instruction not supported".
       final isSelect = apdu.length > 1 && apdu[1] == 0xA4;
-      hce.respond(Uint8List.fromList(isSelect ? [0x90, 0x00] : [0x6D, 0x00]));
+      // The handler is synchronous, so the answer cannot be awaited -- which means a failure
+      // has to be caught right here, or it surfaces as an unhandled async error with nothing
+      // to connect it to the tap that caused it.
+      unawaited(
+        hce
+            .respond(Uint8List.fromList(isSelect ? [0x90, 0x00] : [0x6D, 0x00]))
+            .catchError((Object e) => _write('could not answer the reader: $e', isError: true)),
+      );
     };
     hce.onDeactivated = (reason) => _write('reader gone (reason $reason)');
 

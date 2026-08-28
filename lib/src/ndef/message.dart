@@ -46,6 +46,27 @@ class NdefMessage {
       if (isShort) header |= _flagShortRecord;
       if (hasId) header |= _flagIdLengthPresent;
 
+      // TYPE_LENGTH and ID_LENGTH are one byte each on the wire. The validating constructor
+      // already refuses anything longer, but NdefRecord.fromParts -- the decode path, which
+      // has to represent whatever a tag holds -- does not, so a hand-built record can still
+      // reach here. `addByte` would take the low eight bits and produce a message that encodes
+      // without complaint and that nothing can read back, which is the failure the constructor
+      // rejects these lengths to prevent.
+      if (record.type.length > 255) {
+        throw ArgumentError.value(
+          record.type.length,
+          'records[$i].type',
+          'does not fit the one-byte TYPE_LENGTH field',
+        );
+      }
+      if (record.identifier.length > 255) {
+        throw ArgumentError.value(
+          record.identifier.length,
+          'records[$i].identifier',
+          'does not fit the one-byte ID_LENGTH field',
+        );
+      }
+
       out.addByte(header);
       out.addByte(record.type.length);
 

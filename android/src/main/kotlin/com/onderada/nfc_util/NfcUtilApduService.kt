@@ -3,6 +3,7 @@ package com.onderada.nfc_util
 import android.nfc.cardemulation.HostApduService
 import android.nfc.cardemulation.PollingFrame
 import android.os.Bundle
+import android.util.Log
 
 /**
  * What the plugin exposes to the emulation service.
@@ -71,7 +72,20 @@ class NfcUtilApduService : HostApduService() {
         bridge.onPollingFrames(frames.map(TagMapper::pollingFrame))
     }
 
+    /**
+     * The system can tear this component down without an [onDeactivated] first -- there is no
+     * reader exchange to end when the service is simply stopped -- so the static reference has
+     * to be dropped here as well, or [respond] keeps addressing an instance the framework has
+     * already let go of.
+     */
+    override fun onDestroy() {
+        if (activeService === this) activeService = null
+        super.onDestroy()
+    }
+
     internal companion object {
+        private const val TAG = "NfcUtilPlugin"
+
         /** `6D00`: the card does not support the requested instruction. */
         val SW_INSTRUCTION_NOT_SUPPORTED = byteArrayOf(0x6D, 0x00)
 
@@ -88,9 +102,20 @@ class NfcUtilApduService : HostApduService() {
         @Volatile
         var activeService: NfcUtilApduService? = null
 
-        /** Sends a deferred answer for the APDU most recently delivered. */
+        /**
+         * Sends a deferred answer for the APDU most recently delivered.
+         *
+         * Wrapped, like every other platform call this plugin makes. `sendResponseApdu` writes
+         * to a Messenger the framework only hands over with a command APDU, so an answer that
+         * arrives without one -- Dart responding to a polling frame while observe mode is on,
+         * or answering after the link already dropped -- throws out of a Pigeon handler that
+         * does not catch, which takes the process down. A response nobody is waiting for is
+         * worth a log line, not a crash.
+         */
         fun respond(response: ByteArray) {
-            activeService?.sendResponseApdu(response)
+            val service = activeService ?: return
+            runCatching { service.sendResponseApdu(response) }
+                .onFailure { Log.w(TAG, "response not delivered; no reader exchange is open", it) }
         }
     }
 }

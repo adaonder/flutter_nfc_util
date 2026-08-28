@@ -214,6 +214,12 @@ class TextRecord {
 
   /// Builds a well-known text record. Always encodes as UTF-8.
   static NdefRecord create(String text, {String languageCode = 'en'}) {
+    // Checked before encoding rather than left to `ascii.encode`, whose own
+    // "Contains invalid characters." names neither the parameter nor the rule. An IANA
+    // language tag is ASCII by definition, so this rejects nothing that was ever valid.
+    if (languageCode.codeUnits.any((unit) => unit > 0x7F)) {
+      throw ArgumentError.value(languageCode, 'languageCode', 'is not an ASCII IANA language tag');
+    }
     final languageCodeBytes = ascii.encode(languageCode);
     // The status byte packs the length into six bits, so 63 is the ceiling.
     if (languageCodeBytes.length > 63) throw ArgumentError.value(languageCode, 'languageCode', 'is too long');
@@ -479,6 +485,11 @@ class MimeRecord {
     final slashIndex = normalized.indexOf('/');
     if (slashIndex <= 0) throw ArgumentError.value(mimeType, 'mimeType', 'must have a major type');
     if (slashIndex == normalized.length - 1) throw ArgumentError.value(mimeType, 'mimeType', 'must have a minor type');
+    // As in TextRecord.create: an RFC 2046 media type is ASCII, and reporting it here beats
+    // letting `ascii.encode` below raise an error that names neither the parameter nor the rule.
+    if (normalized.codeUnits.any((unit) => unit > 0x7F)) {
+      throw ArgumentError.value(mimeType, 'mimeType', 'is not an ASCII media type');
+    }
 
     return NdefRecord(
       typeNameFormat: NdefTypeNameFormat.media,

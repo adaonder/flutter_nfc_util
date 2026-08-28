@@ -50,8 +50,33 @@ class NfcUtilPlugin :
 
     private var flutterApi: NfcFlutterApi? = null
     private var activity: Activity? = null
-    private var adapter: NfcAdapter? = null
     private var applicationContext: Context? = null
+
+    /**
+     * The NFC adapter, resolved on first use rather than at attach.
+     *
+     * `getDefaultAdapter` is a `hasSystemFeature` check plus a binder lookup against the NFC
+     * system service, and attach is the wrong moment to spend either: every FlutterEngine
+     * registers every plugin, including the background engines other plugins spin up for push
+     * messages and scheduled work, so an app that merely depends on this package used to pay
+     * for the adapter in engines that never touch NFC. Resolving here moves the cost to the
+     * first call that actually needs an adapter.
+     *
+     * Read only from the platform thread -- every host API method and every lifecycle
+     * callback runs there -- so the two fields behind it need no synchronisation.
+     */
+    private var resolvedAdapter: NfcAdapter? = null
+    private var adapterResolved = false
+
+    private val adapter: NfcAdapter?
+        get() {
+            if (!adapterResolved) {
+                val context = applicationContext ?: return null
+                adapterResolved = true
+                resolvedAdapter = runCatching { NfcAdapter.getDefaultAdapter(context) }.getOrNull()
+            }
+            return resolvedAdapter
+        }
 
     /** Only touched from [ioExecutor], which is single-threaded. */
     private var connectedTech: TagTechnology? = null
@@ -79,6 +104,28 @@ class NfcUtilPlugin :
     private var pendingInitialTag: TagPigeon? = null
 
     private var foregroundDispatchEnabled = false
+
+    /**
+     * The answer [unguardedNfcActivities] last computed, or null before it has run.
+     *
+     * The probe costs six `queryIntentActivities` round trips to the package manager, on the
+     * platform thread, and it reads the manifest -- which cannot change without the process
+     * being restarted. An app that calls `checkTagIntentSetup` on every screen was paying for
+     * all six every time; now it pays once.
+     */
+    private var unguardedActivities: List<String>? = null
+
+    /**
+     * The component state this process last put the emulation service into, or null before it
+     * has looked.
+     *
+     * `setComponentEnabledSetting` takes the package manager's write lock and can block for as
+     * long as a concurrent install holds it, and `HostCardEmulation.setPreferredService` is
+     * documented to be called on every resume -- so the unconditional write was a main-thread
+     * stall on a path apps take constantly. The state is persistent, so it is nearly always
+     * already what the next call is about to ask for.
+     */
+    private var apduServiceState: Int? = null
 
     /**
      * Registered against the *application* context so it survives a configuration change
@@ -114,7 +161,6 @@ class NfcUtilPlugin :
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         applicationContext = binding.applicationContext
-        adapter = NfcAdapter.getDefaultAdapter(binding.applicationContext)
         flutterApi = NfcFlutterApi(binding.binaryMessenger)
         NfcHostApi.setUp(binding.binaryMessenger, this)
         NfcAndroidHostApi.setUp(binding.binaryMessenger, this)
@@ -138,6 +184,8 @@ class NfcUtilPlugin :
         NfcAndroidHostApi.setUp(binding.binaryMessenger, null)
         flutterApi = null
         applicationContext = null
+        resolvedAdapter = null
+        adapterResolved = false
         ioExecutor.shutdown()
     }
 
@@ -332,6 +380,10 @@ class NfcUtilPlugin :
             putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, presenceCheckDelayMillis.toInt())
         }
 
+        // On the platform thread on purpose, unlike the tag I/O below. Both reader-mode calls
+        // are bound to a *resumed* activity: the platform applies them through the activity
+        // lifecycle, so running them off-thread would race a rotation or a pause and leave the
+        // controller polling for a session that is gone, or not polling for one that is not.
         try {
             adapter.enableReaderMode(activity, { tag -> onTagDiscovered(tag, skipNdef) }, flags, extras)
         } catch (e: Throwable) {
@@ -561,6 +613,9 @@ class NfcUtilPlugin :
      * only some other scheme is the one shape this misses.
      */
     private fun unguardedNfcActivities(): List<String> {
+        unguardedActivities?.let { return it }
+        // Not cached when there is no context: "nothing to ask" is not an answer, and caching
+        // it would make the real one unreachable for the life of the process.
         val context = applicationContext ?: return emptyList()
         val packageManager = context.packageManager
         val probes = listOf(
@@ -584,7 +639,7 @@ class NfcUtilPlugin :
                 if (info.permission != DISPATCH_NFC_MESSAGE) unguarded.add(info.name)
             }
         }
-        return unguarded.toList()
+        return unguarded.toList().also { unguardedActivities = it }
     }
 
     /**
@@ -633,6 +688,12 @@ class NfcUtilPlugin :
 
         tags[handle] = tag
         if (initial) {
+            // The launch intent is read once per activity attach, and an activity torn down
+            // and rebuilt inside a live process hands over the same intent again -- so each
+            // rebuild used to add a handle the app never asked for and nothing ever released.
+            // Dropping the one being replaced bounds it: only the tag an app can still take
+            // through takeInitialTag stays addressable.
+            pendingInitialTag?.let { tags.remove(it.handle) }
             pendingInitialTag = enriched
         } else {
             mainHandler.post { flutterApi?.onTagFromIntent(enriched) {} }
@@ -941,6 +1002,11 @@ class NfcUtilPlugin :
      * Turns the emulation service on or off as a package component.
      *
      * `DONT_KILL_APP` because the alternative is restarting the very process that asked.
+     *
+     * Written only when the state actually changes, and read back at most once per process.
+     * The write is the expensive half -- it takes the package manager's write lock, schedules
+     * a settings flush and broadcasts -- while the read is a lookup in settings the package
+     * manager already holds. See [apduServiceState].
      */
     private fun setApduServiceEnabled(enabled: Boolean) {
         val context = applicationContext ?: return
@@ -950,7 +1016,17 @@ class NfcUtilPlugin :
         } else {
             PackageManager.COMPONENT_ENABLED_STATE_DISABLED
         }
-        runCatching { context.packageManager.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP) }
+        if (apduServiceState == state) return
+
+        runCatching {
+            val packageManager = context.packageManager
+            if (packageManager.getComponentEnabledSetting(component) != state) {
+                packageManager.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
+            }
+            // Only on the success path: a throw leaves the real state unknown, and recording a
+            // guess would make the next call skip the write that was never made.
+            apduServiceState = state
+        }
     }
 
     override fun hceRespond(response: ByteArray) {
