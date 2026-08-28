@@ -111,9 +111,20 @@ class NfcUtilApduService : HostApduService() {
          * or answering after the link already dropped -- throws out of a Pigeon handler that
          * does not catch, which takes the process down. A response nobody is waiting for is
          * worth a log line, not a crash.
+         *
+         * Both ways of having nobody to answer log, and they are not the same way. A dropped
+         * link clears [activeService] in `onDeactivated` or `onDestroy`, so there is no
+         * service to ask; a polling frame leaves one set, so the throw comes from the missing
+         * Messenger inside it. Silence on the first would leave the case an app is most
+         * likely to hit with no trace at all -- logcat is the only signal either way, since
+         * nothing goes back to Dart.
          */
         fun respond(response: ByteArray) {
-            val service = activeService ?: return
+            val service = activeService
+            if (service == null) {
+                Log.w(TAG, "response not delivered; there is no reader exchange to answer")
+                return
+            }
             runCatching { service.sendResponseApdu(response) }
                 .onFailure { Log.w(TAG, "response not delivered; no reader exchange is open", it) }
         }

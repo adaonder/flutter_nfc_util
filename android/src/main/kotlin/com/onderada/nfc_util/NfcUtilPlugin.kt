@@ -109,23 +109,19 @@ class NfcUtilPlugin :
      * The answer [unguardedNfcActivities] last computed, or null before it has run.
      *
      * The probe costs six `queryIntentActivities` round trips to the package manager, on the
-     * platform thread, and it reads the manifest -- which cannot change without the process
-     * being restarted. An app that calls `checkTagIntentSetup` on every screen was paying for
-     * all six every time; now it pays once.
+     * platform thread, and what it reads is the manifest, which cannot change without the
+     * process being restarted. An app that calls `checkTagIntentSetup` on every screen was
+     * paying for all six every time; now it pays once.
+     *
+     * One input to the probe is not the manifest: `queryIntentActivities` is asked without
+     * `MATCH_DISABLED_COMPONENTS`, so an activity this app disables through
+     * `setComponentEnabledSetting` drops out of the answer and one it re-enables comes back.
+     * An app doing that to its own NFC activities at run time reads a stale list until it
+     * restarts. Left cached anyway: the value is a manifest lint -- it says which activities
+     * would be dropped by the Android 17 dispatch rule -- and toggling those components
+     * mid-process is not a shape the check is for.
      */
     private var unguardedActivities: List<String>? = null
-
-    /**
-     * The component state this process last put the emulation service into, or null before it
-     * has looked.
-     *
-     * `setComponentEnabledSetting` takes the package manager's write lock and can block for as
-     * long as a concurrent install holds it, and `HostCardEmulation.setPreferredService` is
-     * documented to be called on every resume -- so the unconditional write was a main-thread
-     * stall on a path apps take constantly. The state is persistent, so it is nearly always
-     * already what the next call is about to ask for.
-     */
-    private var apduServiceState: Int? = null
 
     /**
      * Registered against the *application* context so it survives a configuration change
@@ -1033,18 +1029,53 @@ class NfcUtilPlugin :
         NfcUtilApduService.respond(response)
     }
 
+    /**
+     * Claims or releases the foreground preference for the emulation service.
+     *
+     * Void on the wire, so nothing here can be reported to Dart -- see the note on
+     * `HostCardEmulation.setPreferredService`. Every way of not doing what was asked
+     * therefore logs, and each names its own cause, because to the app they are otherwise
+     * the same silence: a device that cannot emulate at all, an app that is not on screen,
+     * and a platform that refused the claim are three different problems, and only the last
+     * means the app is competing with another wallet for the AID.
+     *
+     * The two `CardEmulation` calls answer with a boolean rather than throwing when they
+     * decline, so the result is read instead of discarded. A declined claim is exactly the
+     * state an app cannot otherwise observe: taps keep going to the default wallet while the
+     * app believes it is preferred. One cause is known first-hand rather than guessed --
+     * [claimEmulationService] exists because the platform will not make a *disabled* service
+     * preferred, measured on an API 37 device -- and that call runs just above, which is why
+     * a decline logged here is worth reading rather than assuming.
+     */
     override fun hceSetPreferredService(preferred: Boolean) {
-        val emulation = cardEmulation() ?: return
-        val activity = activity ?: return
-        val component = apduServiceComponent() ?: return
+        val emulation = cardEmulation()
+        if (emulation == null) {
+            Log.w(TAG, "preferred service unchanged: this device has no card emulation")
+            return
+        }
+        val activity = activity
+        if (activity == null) {
+            Log.w(TAG, "preferred service unchanged: no activity is attached")
+            return
+        }
+        val component = apduServiceComponent()
+        if (component == null) {
+            Log.w(TAG, "preferred service unchanged: there is no application context")
+            return
+        }
         if (preferred) claimEmulationService()
+
+        val verb = if (preferred) "set" else "unset"
         runCatching {
             if (preferred) {
                 emulation.setPreferredService(activity, component)
             } else {
                 emulation.unsetPreferredService(activity)
             }
-        }
+        }.fold(
+            { accepted -> if (!accepted) Log.w(TAG, "the platform refused to $verb the preferred service") },
+            { Log.w(TAG, "could not $verb the preferred service", it) },
+        )
     }
 
     // ---------------------------------------------------------------------------------
@@ -1406,6 +1437,34 @@ class NfcUtilPlugin :
          * in compileSdk 36.
          */
         const val DISPATCH_NFC_MESSAGE = "android.permission.DISPATCH_NFC_MESSAGE"
+
+        /**
+         * The component state this *process* last put the emulation service into, or null
+         * before any plugin instance has looked.
+         *
+         * `setComponentEnabledSetting` takes the package manager's write lock and can block
+         * for as long as a concurrent install holds it, and Dart's
+         * `HostCardEmulation.setPreferredService` is documented to be called on every resume
+         * -- so the unconditional write was a main-thread stall on a path apps take
+         * constantly. The state is persistent, so it is nearly always already what the next
+         * call is about to ask for.
+         *
+         * On the companion because that is the scope of what it caches: one setting the whole
+         * package shares, not one per engine. Held per instance it would go stale the moment a
+         * second engine wrote it -- and every engine registers every plugin, which is exactly
+         * why [claimEmulationService] exists. A background engine that enabled the service and
+         * a UI engine that then disabled it would leave the first one believing its own last
+         * write, and skipping the write that puts the component back -- the disabled-service
+         * failure `claimEmulationService` documents.
+         *
+         * Shared across engines but not across threads, so it is a plain field: every writer
+         * is a host API method, and those all run on the platform thread, which on Android is
+         * the one main thread whatever engine the call arrived on. Same rule as
+         * [resolvedAdapter], and not the one [NfcUtilApduService.activeBridge] needs -- that
+         * one is volatile because the service reads it from a binder thread, and nothing
+         * reaches this field from off the platform thread at all.
+         */
+        var apduServiceState: Int? = null
     }
 }
 

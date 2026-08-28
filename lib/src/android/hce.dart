@@ -182,6 +182,20 @@ class HostCardEmulation {
   ///
   /// The bytes are sent as-is, so include the status word: `9000` for success, `6D00` for
   /// an instruction the card does not support.
+  ///
+  /// **Only from inside [onApduReceived], and only once per APDU.** Android gives the
+  /// emulation service somewhere to send an answer when a command APDU arrives, and takes it
+  /// away again when the link drops -- so a call made at any other moment has nothing to
+  /// answer into. Two such moments are ordinary: answering a polling frame delivered to
+  /// [onPollingFrames] while observe mode is on, which is not a command and wants no reply,
+  /// and answering after the reader has left the field.
+  ///
+  /// Such a call does nothing. It does not throw, and the returned future completes
+  /// normally, because the failure happens on the Android side of the channel after the call
+  /// has been accepted -- so nothing here can tell you the reader never heard it. The
+  /// evidence is a warning in logcat under the `NfcUtilPlugin` tag, which is the only signal
+  /// there is. Before 3.3.0 the same call crashed the process instead; swallowing it is the
+  /// price of not doing that.
   Future<void> respond(Uint8List response) => androidApi.hceRespond(response);
 
   /// Makes this app the preferred handler while it is in the foreground.
@@ -189,6 +203,13 @@ class HostCardEmulation {
   /// Without it a tap can go to whichever app owns the AID by default, which for payment
   /// AIDs is the user's wallet. Pair it with the app's lifecycle: true on resume, false on
   /// pause.
+  ///
+  /// Like [respond], this reports nothing back: the returned future completes normally
+  /// whether or not the claim was made. Android can decline it -- for a service it does not
+  /// consider eligible -- and a call that arrives with no activity attached does nothing
+  /// either, which from a lifecycle handler normally means the app is no longer on screen.
+  /// Either way taps keep going wherever they were going, and the only evidence is a warning
+  /// in logcat under the `NfcUtilPlugin` tag.
   Future<void> setPreferredService(bool preferred) => androidApi.hceSetPreferredService(preferred);
 
   // -------------------------------------------------------------------------------------

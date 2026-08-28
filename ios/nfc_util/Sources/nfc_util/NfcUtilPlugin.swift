@@ -112,9 +112,11 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
   /// Narrows a wire block range to the `NSRange` the multi-block commands take, reporting
   /// instead of handing CoreNFC something that cannot mean anything.
   ///
-  /// Every single-block command runs its block number through [byte]; the range commands ran
-  /// theirs through nothing at all, so a negative block number or a zero-length range reached
-  /// the framework as an `NSRange` with no defined reading. The ceiling is the extended
+  /// The non-extended single-block commands run their block number through [byte], and the
+  /// extended ones through [extendedBlockNumber], which is two bytes wide as they are; the
+  /// range commands ran theirs through nothing at all, so a negative block number or a
+  /// zero-length range reached the framework as an `NSRange` with no defined reading. The
+  /// ceiling is the extended
   /// commands' 16-bit block address, and it is deliberately generous rather than the 0...255
   /// the non-extended ones can address: a range this package refuses is one the tag never gets
   /// to answer, and CoreNFC already reports an unaddressable one as `parameterOutOfBound`.
@@ -141,6 +143,112 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
       return nil
     }
     return NSRange(location: Int(blockNumber), length: Int(numberOfBlocks))
+  }
+
+  /// Narrows a wire integer to the closed range CoreNFC documents for it, reporting instead
+  /// of forwarding a number the framework has no reading for.
+  ///
+  /// The sibling of [byte] for the arguments that are wider than a byte -- an extended block
+  /// number, a chunk size -- and that reach CoreNFC as a plain `Int` rather than a `UInt8`.
+  /// Some are `NSUInteger` on the ObjC side, where a negative does not arrive small but
+  /// enormous, and the rest are `NSInteger` with a documented range a negative simply sits
+  /// outside; one bounds check covers both.
+  ///
+  /// Where the bound comes from is the caller's to say, and the two callers do not answer the
+  /// same way: [extendedBlockNumber] quotes Apple, while the chunk size has no documented
+  /// range to quote. Each call site states which it is rather than leaving this helper to
+  /// imply a provenance it cannot have, holding only the parameter it was handed.
+  private static func inRange<T>(
+    _ value: Int64,
+    _ name: String,
+    _ bounds: ClosedRange<Int64>,
+    _ completion: @escaping (Result<T, Error>) -> Void
+  ) -> Int? {
+    guard bounds.contains(value) else {
+      TagMapper.onMain {
+        completion(.failure(PigeonError(
+          code: "invalidParameter",
+          message: "\(name) must be \(bounds.lowerBound)...\(bounds.upperBound), got \(value).",
+          details: nil
+        )))
+      }
+      return nil
+    }
+    return Int(value)
+  }
+
+  /// Narrows the two-byte block address the extended ISO 15693 commands take.
+  ///
+  /// Named rather than spelled out at each call site, so the bound is stated once and is
+  /// Apple's: "2 bytes block number, valid range from 0 to 65535 inclusively".
+  private static func extendedBlockNumber<T>(
+    _ value: Int64,
+    _ completion: @escaping (Result<T, Error>) -> Void
+  ) -> Int? {
+    inRange(value, "blockNumber", 0...0xFFFF, completion)
+  }
+
+  /// Narrows the Le field of an ISO 7816 command APDU.
+  ///
+  /// Not [inRange], because the valid set is not a range. Apple's header reads "Valid range
+  /// is from 1 to 65536 inclusively; -1 means no response data field is expected", so -1 is
+  /// the one negative here that carries meaning instead of being an error -- and zero is
+  /// outside the set, because a command expecting nothing back says so with -1 rather than
+  /// with a length of none.
+  private static func expectedResponseLength<T>(
+    _ value: Int64,
+    _ completion: @escaping (Result<T, Error>) -> Void
+  ) -> Int? {
+    guard value == -1 || (1...0x1_0000).contains(value) else {
+      TagMapper.onMain {
+        completion(.failure(PigeonError(
+          code: "invalidParameter",
+          message: "expectedResponseLength must be 1...65536, or -1 for no response data, got \(value).",
+          details: nil
+        )))
+      }
+      return nil
+    }
+    return Int(value)
+  }
+
+  /// Narrows the retry settings both `WithConfiguration` commands carry.
+  ///
+  /// `maximumRetries` is an `NSUInteger` and `retryInterval` a count of seconds, so a
+  /// negative retry count reaches CoreNFC as a very large one and a negative interval as a
+  /// wait that cannot happen. Neither is a number the tag ever gets to refuse, which is the
+  /// same reasoning [blockRange] is built on.
+  ///
+  /// The ceiling is Apple's own, and it is on the base class both configurations inherit
+  /// rather than on either initialiser: `NFCTagCommandConfiguration.maximumRetries` in
+  /// `NFCTag.h` reads "Valid value is 0 to 256. Default is 0." Unlike [blockRange]'s
+  /// deliberately generous ceiling there is no reason to be wider here -- a retry count is
+  /// not something a tag answers, so nothing is lost by holding it to the documented range,
+  /// and CoreNFC's own answer to a configuration outside it is
+  /// `NFCTagCommandConfigurationErrorInvalidParameters`.
+  ///
+  /// The interval is checked as `>= 0` rather than `!(< 0)` on purpose -- that also refuses a
+  /// NaN, which no `Duration` on the Dart side can produce but the wire can still carry. It
+  /// gets no ceiling: Apple documents none for it, and a wait long enough to matter ends on
+  /// the reader session's own timeout.
+  private static func retrySettings<T>(
+    _ configuration: Iso15693CommandConfigurationPigeon,
+    _ completion: @escaping (Result<T, Error>) -> Void
+  ) -> (maximumRetries: Int, retryInterval: TimeInterval)? {
+    guard configuration.maximumRetries >= 0, configuration.maximumRetries <= 256,
+          configuration.retryIntervalSeconds >= 0
+    else {
+      TagMapper.onMain {
+        completion(.failure(PigeonError(
+          code: "invalidParameter",
+          message: "maximumRetries must be 0...256 and retryInterval must not be negative, "
+            + "got \(configuration.maximumRetries) and \(configuration.retryIntervalSeconds)s.",
+          details: nil
+        )))
+      }
+      return nil
+    }
+    return (Int(configuration.maximumRetries), configuration.retryIntervalSeconds)
   }
 
   /// Resolves a handle and hands the tag to `body`, or completes with "not found".
@@ -807,10 +915,15 @@ extension NfcUtilPlugin {
     blockNumber: Int64,
     completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void
   ) {
+    // The extended commands address two bytes of block, "valid range from 0 to 65535
+    // inclusively" -- which is why these three do not run their block number through [byte]
+    // the way the non-extended single-block commands do. Widening the address is the whole
+    // point of the extended forms; leaving it unchecked was not part of that.
+    guard let block = Self.extendedBlockNumber(blockNumber, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.extendedReadSingleBlock(
         requestFlags: TagMapper.requestFlags(flags),
-        blockNumber: Int(blockNumber)
+        blockNumber: block
       ) { data, error in
         Self.finish(data, error, completion) { FlutterStandardTypedData(bytes: $0) }
       }
@@ -824,10 +937,11 @@ extension NfcUtilPlugin {
     dataBlock: FlutterStandardTypedData,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    guard let block = Self.extendedBlockNumber(blockNumber, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.extendedWriteSingleBlock(
         requestFlags: TagMapper.requestFlags(flags),
-        blockNumber: Int(blockNumber),
+        blockNumber: block,
         dataBlock: dataBlock.data
       ) { error in Self.finishVoid(error, completion) }
     }
@@ -839,8 +953,9 @@ extension NfcUtilPlugin {
     blockNumber: Int64,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    guard let block = Self.extendedBlockNumber(blockNumber, completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
-      tag.extendedLockBlock(requestFlags: TagMapper.requestFlags(flags), blockNumber: Int(blockNumber)) { error in
+      tag.extendedLockBlock(requestFlags: TagMapper.requestFlags(flags), blockNumber: block) { error in
         Self.finishVoid(error, completion)
       }
     }
@@ -899,10 +1014,17 @@ extension NfcUtilPlugin {
     customRequestParameters: FlutterStandardTypedData,
     completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void
   ) {
+    // 0...255 rather than the 0xA0...0xDF Apple documents, on the same terms as [blockRange]:
+    // a command code this package refuses is one the tag never gets to answer, and a code the
+    // tag does not implement comes back as an ISO 15693-3 error from the tag itself. What is
+    // narrowed here is only what has no defined reading -- and that has two different shapes
+    // on the two custom command paths, because CoreNFC takes this one as a signed `NSInteger`
+    // and the configuration below as an `NSUInteger`, where a negative arrives enormous.
+    guard let code = Self.byte(customCommandCode, "customCommandCode", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.customCommand(
         requestFlags: TagMapper.requestFlags(flags),
-        customCommandCode: Int(customCommandCode),
+        customCommandCode: Int(code),
         customRequestParameters: customRequestParameters.data
       ) { data, error in
         Self.finish(data, error, completion) { FlutterStandardTypedData(bytes: $0) }
@@ -924,8 +1046,17 @@ extension NfcUtilPlugin {
   ) {
     // The flag byte arrives raw rather than as the wire enum: this carries whatever the tag
     // vendor's command wants in bit 8, which the six named request flags cannot express.
+    //
+    // Raw is not the same as unbounded, though, and this is the one place where the two are
+    // easy to confuse. Apple's header describes the frame as "8 bits request flag, 8 bits
+    // command code, and optional data", so both are bytes however little this call interprets
+    // them -- and the escape hatch that lets an app reach a command no typed method covers is
+    // exactly the call where a wrong number is least likely to be caught anywhere else.
+    guard let flag = Self.byte(flags, "requestFlags", completion),
+          let code = Self.byte(commandCode, "commandCode", completion)
+    else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
-      tag.__sendRequest(withFlag: Int(flags), commandCode: Int(commandCode), data: data?.data) {
+      tag.__sendRequest(withFlag: Int(flag), commandCode: Int(code), data: data?.data) {
         responseFlag, response, error in
         Self.iso15693Response(responseFlag, response, error, completion)
       }
@@ -1011,10 +1142,15 @@ extension NfcUtilPlugin {
     message: FlutterStandardTypedData,
     completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void
   ) {
+    // ISO/IEC 29167 gives the crypto suite indicator one byte, and so does Apple's header.
+    // The suite decides how the tag reads `message`, so a suite number that was never one is
+    // the argument least worth forwarding: what comes back is a tag interpreting the rest of
+    // the frame under rules nobody chose.
+    guard let suite = Self.byte(cryptoSuiteIdentifier, "cryptoSuiteIdentifier", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.__authenticate(
         withRequestFlags: TagMapper.requestFlags(flags),
-        cryptoSuiteIdentifier: Int(cryptoSuiteIdentifier),
+        cryptoSuiteIdentifier: Int(suite),
         message: message.data
       ) { responseFlag, response, error in
         Self.iso15693Response(responseFlag, response, error, completion)
@@ -1029,10 +1165,13 @@ extension NfcUtilPlugin {
     message: FlutterStandardTypedData,
     completion: @escaping (Result<Iso15693ResponsePigeon, Error>) -> Void
   ) {
+    // One byte, as in Apple's header. Narrowed for the same reason as the crypto suite above,
+    // and with more at stake: this names the key the tag is about to overwrite.
+    guard let key = Self.byte(keyIdentifier, "keyIdentifier", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.__keyUpdate(
         withRequestFlags: TagMapper.requestFlags(flags),
-        keyIdentifier: Int(keyIdentifier),
+        keyIdentifier: Int(key),
         message: message.data
       ) { responseFlag, response, error in
         Self.iso15693Response(responseFlag, response, error, completion)
@@ -1047,10 +1186,12 @@ extension NfcUtilPlugin {
     message: FlutterStandardTypedData,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
+    // As in `iso15693Authenticate`: one byte, and the suite the tag reads `message` under.
+    guard let suite = Self.byte(cryptoSuiteIdentifier, "cryptoSuiteIdentifier", completion) else { return }
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.__challenge(
         withRequestFlags: TagMapper.requestFlags(flags),
-        cryptoSuiteIdentifier: Int(cryptoSuiteIdentifier),
+        cryptoSuiteIdentifier: Int(suite),
         message: message.data
       ) { error in Self.finishVoid(error, completion) }
     }
@@ -1110,12 +1251,21 @@ extension NfcUtilPlugin {
     configuration: Iso15693CommandConfigurationPigeon,
     completion: @escaping (Result<[FlutterStandardTypedData], Error>) -> Void
   ) {
-    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion) else { return }
+    // chunkSize is an `NSUInteger` count of blocks per command, and the one bound here that is
+    // not Apple's: the property says only "may be limited by the tag hardware". So the guard
+    // refuses what has no reading at all -- zero blocks per command, and the negatives that
+    // would arrive enormous -- and keeps [blockRange]'s 16-bit ceiling above that rather than
+    // the 1...256 this command's own range can carry, on [blockRange]'s reasoning: a chunk
+    // this package refuses is one CoreNFC never gets to size down or refuse itself.
+    guard let range = Self.blockRange(blockNumber, numberOfBlocks, completion),
+          let chunk = Self.inRange(chunkSize, "chunkSize", 1...0x1_0000, completion),
+          let retries = Self.retrySettings(configuration, completion)
+    else { return }
     let readConfiguration = NFCISO15693ReadMultipleBlocksConfiguration(
       range: range,
-      chunkSize: Int(chunkSize),
-      maximumRetries: Int(configuration.maximumRetries),
-      retryInterval: configuration.retryIntervalSeconds
+      chunkSize: chunk,
+      maximumRetries: retries.maximumRetries,
+      retryInterval: retries.retryInterval
     )
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.readMultipleBlock(readConfiguration: readConfiguration) { data, error in
@@ -1132,12 +1282,20 @@ extension NfcUtilPlugin {
     configuration: Iso15693CommandConfigurationPigeon,
     completion: @escaping (Result<FlutterStandardTypedData, Error>) -> Void
   ) {
+    // Both are `NSUInteger` properties Apple documents as byte-wide -- manufacturerCode
+    // 0x00...0xFF, customCommandCode 0xA0...0xDF -- so unlike the signed parameter on the
+    // plain custom command above, a negative one here does not arrive negative. See there for
+    // why the command code is held to a byte rather than to the narrower documented range.
+    guard let manufacturer = Self.byte(manufacturerCode, "manufacturerCode", completion),
+          let code = Self.byte(customCommandCode, "customCommandCode", completion),
+          let retries = Self.retrySettings(configuration, completion)
+    else { return }
     let commandConfiguration = NFCISO15693CustomCommandConfiguration(
-      manufacturerCode: Int(manufacturerCode),
-      customCommandCode: Int(customCommandCode),
+      manufacturerCode: Int(manufacturer),
+      customCommandCode: Int(code),
       requestParameters: customRequestParameters.data,
-      maximumRetries: Int(configuration.maximumRetries),
-      retryInterval: configuration.retryIntervalSeconds
+      maximumRetries: retries.maximumRetries,
+      retryInterval: retries.retryInterval
     )
     withTag(handle, as: NFCISO15693Tag.self, completion) { tag in
       tag.sendCustomCommand(commandConfiguration: commandConfiguration) { data, error in
@@ -1211,7 +1369,8 @@ extension NfcUtilPlugin {
     guard let cla = Self.byte(instructionClass, "instructionClass", completion),
           let ins = Self.byte(instructionCode, "instructionCode", completion),
           let p1 = Self.byte(p1Parameter, "p1Parameter", completion),
-          let p2 = Self.byte(p2Parameter, "p2Parameter", completion)
+          let p2 = Self.byte(p2Parameter, "p2Parameter", completion),
+          let le = Self.expectedResponseLength(expectedResponseLength, completion)
     else { return }
     withTag(handle, as: NFCISO7816Tag.self, completion) { tag in
       let apdu = NFCISO7816APDU(
@@ -1220,7 +1379,7 @@ extension NfcUtilPlugin {
         p1Parameter: p1,
         p2Parameter: p2,
         data: data.data,
-        expectedResponseLength: Int(expectedResponseLength)
+        expectedResponseLength: le
       )
       tag.sendCommand(apdu: apdu) { payload, sw1, sw2, error in
         Self.apduResult(payload, sw1, sw2, error, completion)
@@ -1275,7 +1434,8 @@ extension NfcUtilPlugin {
     guard let cla = Self.byte(instructionClass, "instructionClass", completion),
           let ins = Self.byte(instructionCode, "instructionCode", completion),
           let p1 = Self.byte(p1Parameter, "p1Parameter", completion),
-          let p2 = Self.byte(p2Parameter, "p2Parameter", completion)
+          let p2 = Self.byte(p2Parameter, "p2Parameter", completion),
+          let le = Self.expectedResponseLength(expectedResponseLength, completion)
     else { return }
     withTag(handle, as: NFCMiFareTag.self, completion) { tag in
       let apdu = NFCISO7816APDU(
@@ -1284,7 +1444,7 @@ extension NfcUtilPlugin {
         p1Parameter: p1,
         p2Parameter: p2,
         data: data.data,
-        expectedResponseLength: Int(expectedResponseLength)
+        expectedResponseLength: le
       )
       tag.sendMiFareISO7816Command(apdu) { payload, sw1, sw2, error in
         Self.apduResult(payload, sw1, sw2, error, completion)

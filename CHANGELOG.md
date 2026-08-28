@@ -16,15 +16,28 @@ app does one of the four things below.
    answer into. Not crashing costs you the signal: nothing in Dart says the answer went
    nowhere.
 
-2. **On iOS, never ask for zero blocks.**
+2. **On iOS, every number you pass is checked before CoreNFC sees it.**
 
-   If you work `numberOfBlocks` out from a list or a calculation, check it is not zero first.
-   The ISO 15693 range commands now refuse an empty or negative range and throw
-   `PlatformException(code: 'invalidParameter')`.
+   Two of these can turn a call that used to go through into a thrown
+   `PlatformException(code: 'invalidParameter')`, so they are the two to look for:
 
-   They used to hand the numbers straight to CoreNFC as an `NSRange`, which has no defined
-   meaning when the length is zero or the start is negative. Ranges up to 65536 blocks are
-   untouched, so extended block numbers behave exactly as they did.
+   * **Zero blocks.** If you work `numberOfBlocks` out from a list or a calculation, check it
+     is not zero first. The ISO 15693 range commands used to hand the numbers straight to
+     CoreNFC as an `NSRange`, which has no defined meaning when the length is zero or the
+     start is negative. Ranges up to 65536 blocks are untouched, so extended block numbers
+     behave exactly as they did.
+
+   * **`expectedResponseLength: 0` on either `sendCommand`.** This is an ISO 7816 change, not
+     a block one, and it is easy to miss because zero looks like the natural way to say "no
+     response expected". It is not: Apple's Le field is 1 to 65536, and **-1** is how a
+     command says it expects nothing back. Zero was being forwarded as-is before.
+
+   The rest tighten arguments that had no defined reading outside their range and are
+   unlikely to be reached on purpose: `chunkSize` has to be at least one block,
+   `maximumRetries` has to be 0 to 256, `retryInterval` must not be negative, the extended
+   commands' `blockNumber` is 0 to 65535, and the byte-wide arguments -- command codes, crypto
+   suite and key identifiers, the raw request flag, the four APDU header fields -- have to be
+   bytes.
 
 3. **`NdefMessage.toBytes()` can now throw.**
 
@@ -264,6 +277,23 @@ None of it was reachable by the analyzer or the test suite. Every one was presen
   in `onDestroy` now, which `onDeactivated` alone did not cover: a component can be stopped
   with no reader exchange to end.
 
+  Both ways of having nobody to answer log under the `NfcUtilPlugin` tag, and `respond` now
+  says in its own documentation that it is a silent no-op outside `onApduReceived`. Logcat is
+  the only signal: the call is accepted, so the future it returns completes normally.
+
+* **Becoming the preferred card could fail without leaving a trace anywhere.** *(Fix,
+  Android -- host card emulation.)* `setPreferredService()` now logs every way it can decline
+  to do what was asked, and says in its documentation that it reports nothing back.
+
+  It is void on the wire, so no failure can reach Dart, and it had four silent ones: no card
+  emulation on the device, no activity attached, no application context, and a throw. The
+  fifth was not even a failure the code looked at -- `CardEmulation.setPreferredService` and
+  `unsetPreferredService` answer with a boolean when the platform declines rather than
+  throwing, and the result was discarded. That last one is the one that happens: the platform
+  refuses a service it does not consider eligible, taps keep going to the user's wallet, and
+  the app has no way to know. Each cause now logs under its own message, because "nothing
+  happened" is the same silence for all five and only some of them are the app's to fix.
+
 * **Becoming the preferred card wrote to the package manager every single time.** *(Fix,
   Android -- host card emulation.)* `setPreferredService(true)` now writes only when something
   actually changes, and reads the current state at most once per process.
@@ -271,7 +301,9 @@ None of it was reachable by the analyzer or the test suite. Every one was presen
   Enabling the emulation component takes the package manager's write lock, schedules a
   settings flush and broadcasts -- and this package's own documentation tells apps to make
   that call on every resume. The setting is persistent, so it was nearly always already what
-  the call was about to ask for.
+  the call was about to ask for. What it remembers is held per process rather than per plugin
+  instance, because the setting is one the whole package shares and every Flutter engine
+  registers every plugin.
 
 * **`checkTagIntentSetup()` re-ran six package-manager queries on every call.** *(Fix,
   Android.)* It works the answer out once now.
@@ -279,7 +311,10 @@ None of it was reachable by the analyzer or the test suite. Every one was presen
   The probe reads the manifest, which cannot change without the process restarting, so
   repeating it bought nothing. The call is still synchronous and still does that first pass on
   the platform thread; making it asynchronous would mean regenerating the whole Pigeon layer,
-  which is a release of its own.
+  which is a release of its own. The one input that is not the manifest is an activity's own
+  enabled state: an app that disables or re-enables one of its NFC activities at run time
+  reads the earlier answer until it restarts. The value is a manifest lint, so that is a
+  trade the cache is allowed to make, and the code says so.
 
 * **Every Flutter engine paid for the NFC adapter, even the ones that never touch NFC.**
   *(Fix, Android.)* The adapter is resolved on first use now instead of at plugin attach.
@@ -289,8 +324,8 @@ None of it was reachable by the analyzer or the test suite. Every one was presen
   messages and scheduled work. An app that merely depends on this package was paying for it
   there.
 
-* **The ISO 15693 range commands checked nothing.** *(Fix, iOS.)* They share one guard now and
-  report a bad range as `invalidParameter`.
+* **The ISO 15693 range and retry arguments checked nothing.** *(Fix, iOS.)* They share guards
+  now and report a bad one as `invalidParameter`.
 
   Every single-block command already narrowed its block number and reported an out-of-range
   one; the eight range commands built an `NSRange` straight from the wire values, so a
@@ -298,6 +333,46 @@ None of it was reachable by the analyzer or the test suite. Every one was presen
   guard's ceiling is the extended commands' 16-bit block address -- deliberately wider than
   the 0...255 the short commands can reach, because a range this package refuses is one the
   tag never gets to answer.
+
+  The two `WithConfiguration` commands carry three more values of the same kind, and they are
+  checked on the same terms: `chunkSize` must be at least one block, `maximumRetries` must be
+  0 to 256, and `retryInterval` must not be negative. CoreNFC takes the first two as
+  `NSUInteger`, so a negative one arrives there enormous rather than small. The retry ceiling
+  is Apple's, documented on the base class both configurations inherit rather than on either
+  initialiser -- `NFCTagCommandConfiguration.maximumRetries` in `NFCTag.h` -- which is why it
+  is easy to miss.
+
+  The two custom-command calls are narrowed too: `customCommandCode` on both, and
+  `manufacturerCode` on the configuration form, now go through the byte guard the block
+  numbers, AFI and DSFID already used. They are held to a byte rather than to the 0xA0-0xDF
+  Apple documents, on the same terms as the block range -- a code this package refuses is one
+  the tag never gets to answer, and `sendRequest` is already the documented way to send a
+  command outside that range.
+
+  The sweep was then finished rather than left half done, because a guard that covers most of
+  a surface is the kind an app learns to distrust. Every integer the iOS side takes from Dart
+  and hands to CoreNFC is now narrowed where it arrives -- to Apple's documented range wherever
+  holding it there costs nothing, and on the reasoning above where it would cost something: a
+  custom command code is held to a byte rather than to the documented 0xA0-0xDF, and the block
+  range keeps the extended commands' 16-bit ceiling rather than the 0-255 the short form can
+  address. `chunkSize` is a third case and neither of those: Apple documents no range for it
+  at all -- "may be limited by the tag hardware" is the whole of it -- so the guard refuses
+  only what cannot be read as a chunk count, zero and the negatives, and leaves the size to
+  CoreNFC and the tag. What was added last:
+
+  * The request flag and command code on `sendRequest`, the crypto suite identifier on
+    `authenticate` and `challenge`, and the key identifier on `keyUpdate` -- all 8 bits.
+    `sendRequest` is the escape hatch for commands no typed method covers, so it is the call
+    where a wrong number is least likely to be caught anywhere else; declining to interpret
+    its two bytes was never a reason to skip checking that they are bytes.
+  * `blockNumber` on `extendedReadSingleBlock`, `extendedWriteSingleBlock` and
+    `extendedLockBlock` -- "2 bytes block number, valid range from 0 to 65535 inclusively".
+    These are the commands that exist to address past 255, so a byte guard would have been
+    wrong; they had no guard at all instead.
+  * `expectedResponseLength` on both `sendCommand` forms -- the Le field, 1 to 65536, or -1
+    for a command that expects no response data. Its valid set is not a range, which is why
+    it gets its own check: -1 is the one negative that means something, and 0 is not a way to
+    say it.
 
 * **A tag that launched the app leaked a handle on every activity rebuild.** *(Fix, Android.)*
   The one being replaced is released now.

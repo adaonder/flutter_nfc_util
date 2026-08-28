@@ -209,10 +209,17 @@ class Iso15693CommandConfiguration {
   const Iso15693CommandConfiguration({required this.maximumRetries, this.retryInterval = Duration.zero});
 
   /// How many times to resend before giving up. Zero sends the command once.
+  ///
+  /// Apple documents the valid range as 0 to 256, on the configuration base class rather than
+  /// on the commands themselves. Anything outside it throws
+  /// `PlatformException(code: 'invalidParameter')` rather than reaching CoreNFC, which takes
+  /// this as an unsigned count -- so a negative one would not arrive there small.
   final int maximumRetries;
 
   /// How long to wait between attempts. Fractions of a second survive the trip: CoreNFC
   /// counts this in seconds and takes them as a double.
+  ///
+  /// Must not be negative, for the same reason as [maximumRetries].
   final Duration retryInterval;
 
   Iso15693CommandConfigurationPigeon _toWire() => Iso15693CommandConfigurationPigeon(
@@ -450,19 +457,23 @@ class Iso15693 {
   Future<void> stayQuiet() => iosApi.iso15693StayQuiet(_handle);
 
   /// As [readSingleBlock], for tags with more than 256 blocks.
+  ///
+  /// [blockNumber] is a two-byte address, 0-65535. Outside that it throws
+  /// `PlatformException(code: 'invalidParameter')` without reaching the tag, as it does on
+  /// [extendedWriteSingleBlock] and [extendedLockBlock].
   Future<Uint8List> extendedReadSingleBlock({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
   }) => iosApi.iso15693ExtendedReadSingleBlock(_handle, _flags(requestFlags), blockNumber);
 
-  /// As [writeSingleBlock], for tags with more than 256 blocks.
+  /// As [writeSingleBlock], for tags with more than 256 blocks. [blockNumber] is 0-65535.
   Future<void> extendedWriteSingleBlock({
     required Set<Iso15693RequestFlag> requestFlags,
     required int blockNumber,
     required Uint8List dataBlock,
   }) => iosApi.iso15693ExtendedWriteSingleBlock(_handle, _flags(requestFlags), blockNumber, dataBlock);
 
-  /// As [lockBlock], for tags with more than 256 blocks.
+  /// As [lockBlock], for tags with more than 256 blocks. [blockNumber] is 0-65535.
   Future<void> extendedLockBlock({required Set<Iso15693RequestFlag> requestFlags, required int blockNumber}) =>
       iosApi.iso15693ExtendedLockBlock(_handle, _flags(requestFlags), blockNumber);
 
@@ -483,6 +494,11 @@ class Iso15693 {
       _systemInfo(await iosApi.iso15693GetSystemInfo(_handle, _flags(requestFlags)));
 
   /// Sends a manufacturer-defined command. [customCommandCode] is 0xA0-0xDF.
+  ///
+  /// A code that is not a byte at all throws `PlatformException(code: 'invalidParameter')`
+  /// without reaching the tag. Anything narrower is left to the tag: a code inside a byte but
+  /// outside 0xA0-0xDF is not refused here, it is simply one no tag answers as a custom
+  /// command -- [sendRequest] is the way to send those.
   Future<Uint8List> customCommand({
     required Set<Iso15693RequestFlag> requestFlags,
     required int customCommandCode,
@@ -504,6 +520,9 @@ class Iso15693 {
   /// defines for itself.
   ///
   /// The whole frame -- flag, command code and [data] together -- has to fit in 256 bytes.
+  /// [requestFlags] and [commandCode] are each one byte, so a value outside 0-255 throws
+  /// `PlatformException(code: 'invalidParameter')`. Raw does not mean unbounded: this call
+  /// declines to interpret the two bytes, not to check that they are bytes.
   Future<Iso15693Response> sendRequest({required int requestFlags, required int commandCode, Uint8List? data}) async =>
       _response(await iosApi.iso15693SendRequest(_handle, requestFlags, commandCode, data));
 
@@ -556,6 +575,9 @@ class Iso15693 {
   /// replies included, which is what makes the response flag worth reading:
   /// [Iso15693ResponseFlag.finalResponse] is how a finished exchange is told apart from one
   /// still waiting for another round.
+  ///
+  /// [cryptoSuiteIdentifier] is one byte; outside 0-255 it throws
+  /// `PlatformException(code: 'invalidParameter')`.
   Future<Iso15693Response> authenticate({
     required Set<Iso15693RequestFlag> requestFlags,
     required int cryptoSuiteIdentifier,
@@ -566,7 +588,8 @@ class Iso15693 {
   /// Replaces the key [keyIdentifier] names (0x36).
   ///
   /// [message] follows the crypto suite the preceding [authenticate] agreed on, so this only
-  /// means anything after one.
+  /// means anything after one. [keyIdentifier] is one byte, refused outside 0-255 the way
+  /// [authenticate] refuses a crypto suite that is not one.
   Future<Iso15693Response> keyUpdate({
     required Set<Iso15693RequestFlag> requestFlags,
     required int keyIdentifier,
@@ -575,6 +598,8 @@ class Iso15693 {
 
   /// Poses a challenge (0x39), which answers nothing on its own: the tag computes into its
   /// response buffer, and [readBuffer] is what collects the result.
+  ///
+  /// [cryptoSuiteIdentifier] is one byte, as in [authenticate].
   Future<void> challenge({
     required Set<Iso15693RequestFlag> requestFlags,
     required int cryptoSuiteIdentifier,
@@ -597,6 +622,10 @@ class Iso15693 {
   /// As [readMultipleBlocks], except CoreNFC cuts the range into requests of [chunkSize]
   /// blocks and retries each one per [configuration] without coming back to Dart in between.
   /// The tag's hardware caps how large a chunk it will answer.
+  ///
+  /// [chunkSize] is a number of blocks and has to be at least one; so does [numberOfBlocks],
+  /// and [blockNumber] cannot be negative. A range or a chunk outside that throws
+  /// `PlatformException(code: 'invalidParameter')` without reaching the tag.
   ///
   /// CoreNFC files this among its legacy ISO 15693 calls, which want the
   /// `com.apple.developer.nfc.readersession.iso15693.tag-identifiers` entitlement -- Apple
@@ -622,6 +651,10 @@ class Iso15693 {
   ///
   /// Carries the same legacy-entitlement caveat as [readMultipleBlocksWithConfiguration], so
   /// [customCommand] is the route that always works.
+  ///
+  /// [manufacturerCode] and [customCommandCode] must each fit a byte -- Apple documents them
+  /// as 0x00-0xFF and 0xA0-0xDF -- and are refused the same way [customCommand] refuses a
+  /// code that is not one.
   Future<Uint8List> customCommandWithConfiguration({
     required int manufacturerCode,
     required int customCommandCode,
@@ -712,6 +745,10 @@ class Iso7816 {
   final bool proprietaryApplicationDataCoding;
 
   /// Sends a command APDU assembled from its fields.
+  ///
+  /// The four header fields are each one byte. [expectedResponseLength] is the Le field:
+  /// 1-65536, or -1 for a command that expects no response data. Zero is not a way to say
+  /// that, and anything else throws `PlatformException(code: 'invalidParameter')`.
   Future<Iso7816ResponseApdu> sendCommand({
     required int instructionClass,
     required int instructionCode,
@@ -772,6 +809,9 @@ class MiFare {
   Future<Uint8List> sendMiFareCommand(Uint8List commandPacket) => iosApi.mifareSendCommand(_handle, commandPacket);
 
   /// Sends an ISO 7816 command APDU assembled from its fields.
+  ///
+  /// The fields are bounded as on [Iso7816.sendCommand]: four one-byte header fields, and an
+  /// [expectedResponseLength] of 1-65536 or -1 for a command that expects no response data.
   Future<Iso7816ResponseApdu> sendMiFareIso7816Command({
     required int instructionClass,
     required int instructionCode,
