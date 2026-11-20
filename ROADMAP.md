@@ -129,8 +129,11 @@ page. `android-36` is API 36, `android-37.0` is API 37 — and **API 36.1 sits b
 A plain `javap` diff of the two jars lumps every 36.1 addition in with the 37.0 ones; only
 `api-versions.xml` records the real `since=` per member.
 
-For `android.nfc` the split is lopsided: of the fifteen members added between the two jars,
-**eleven are API 36.1** and only four are API 37.
+For `android.nfc` the split is lopsided: of the seventeen members added between the two jars,
+**twelve are API 36.1** and five are API 37. Re-counted from `api-versions.xml` on 2026-10-28;
+this used to say fifteen, eleven and four. The 36.1 table below lists all twelve, so only the
+count was wrong there — but one of the five API 37 members was genuinely missing, because it
+is not on `NfcAdapter` itself. See [Android 17](#android-17-api-37).
 
 That changes the release plan. AGP has expressed a minor compile SDK since **8.11.1**, via
 `compileSdkMinor`, and this plugin already builds with AGP 8.13.2:
@@ -146,6 +149,14 @@ So the API 36.1 group is reachable without waiting for a major — the floor it 
 consuming app is "AGP 8.11.1 or newer", not "an AGP that knows API 37". The caveat is that
 the `android-36.1` platform is a separate SDK package that has to be installed; it is not
 present on this machine, so nothing below has been compiled yet.
+
+**And the next minor after it, API 37.1, adds nothing to `android.nfc` — checked 2026-10-28.**
+That platform *is* installed here (`source.properties` says `AndroidVersion.ApiLevel=37.1`),
+and its `api-versions.xml` is identical to `android-37.0`'s for this namespace: the same 33
+classes, and not one member with `since="37.1"`. So there is no third Android group to plan
+for, and the 36.1 lesson — that a minor release can carry most of the additions — does not
+repeat here. Recorded rather than left to be re-derived: the next sweep only has to diff
+whatever ships after 37.1.
 
 | Floor | Moved by | Costs a consumer |
 |---|---|---|
@@ -188,16 +199,19 @@ major**, not the SDK.
 
 ### Android 17 (API 37)
 
-Four members, and one deprecation.
+Five members, and one deprecation.
 
 | Member | What it is for |
 |---|---|
-| `allowOneTransaction()` | Lets a single exchange through without leaving observe mode. The missing half of the observe-mode story shipped in 3.2.0, and the reason API 37 matters at all here. |
+| `allowOneTransaction()` | Lets a single exchange through without leaving observe mode. The missing half of the observe-mode story shipped in 3.2.0, and until `onTagLost` turned up, the only reason API 37 mattered here. |
 | `isReaderModeAnnotationSupported()` + `EXTRA_READER_TECH_A_POLLING_LOOP_ANNOTATION` | A reader-mode annotation. The constant's value is `android.nfc.extra.READER_TECH_A_POLLING_LOOP_ANNOTATION`; the jar alone does not prove where it is passed, so treat "it goes in the reader-mode extras `Bundle`" as the working assumption to confirm against the platform docs before implementing. Needs a new field on `SessionConfigPigeon` and a matching parameter on `NfcUtil.startSession`. |
+| `NfcAdapter.ReaderCallback.onTagLost(Tag)` | **A real tag-removed signal, and this file missed it until 2026-10-28.** A `javap` of `android.nfc.NfcAdapter` cannot show it: it lives in `NfcAdapter$ReaderCallback`, a separate class file. It is a `default` method, so no implementor breaks — but a Kotlin SAM lambda cannot override a default method, so `NfcUtilPlugin.kt`'s `{ tag -> onTagDiscovered(tag, skipNdef) }` has to become an `object : NfcAdapter.ReaderCallback` expression before anything else. After that it is a new `NfcFlutterApi` method, a fourth arm on `_SessionArm` and one optional public callback — no enum value, so nothing but the `compileSdk` holds it to a major. It fires only for a reader-mode session, which is exactly what separates it from [`ignore()`](#reachable-at-the-current-floor-and-never-taken). |
 | `getGestureExchangeAid()` | Wallet-role surface — see *Out of scope*. |
 | `ACTION_TAG_DISCOVERED` | **Deprecated.** Already suppressed and still accepted, because every device up to API 36 sends it. |
 
-No class was added or removed under `android.nfc` between the two jars.
+No class was added or removed under `android.nfc` between the two jars — but
+`NfcAdapter$ReaderCallback` gained a method, which is the whole reason "no class changed" must
+not be read as "no member was added".
 
 ---
 
@@ -266,7 +280,7 @@ hand.
 
 | API | Since | Note |
 |---|---|---|
-| `NfcAdapter.ignore(Tag, int, OnTagRemovedListener, Handler)` | API 24 — exactly `minSdk` | The only tag-*removed* signal the platform offers. Today the package can only learn a tag is gone by poking it and catching `TAG_LOST`. Two things must be documented or it reads as broken: after `ignore()` every call on that tag throws `IOException` (so the handle must be destroyed with it), and randomised-UID tags — most modern DESFire and EMV — cannot be debounced reliably. **Measure first:** how it interacts with an active reader-mode session is not settled by the SDK docs, and this file's own rule says measure rather than assume. |
+| `NfcAdapter.ignore(Tag, int, OnTagRemovedListener, Handler)` | API 24 — exactly `minSdk` | The only tag-*removed* signal at `minSdk`, and still the only one outside a reader-mode session: API 37's `ReaderCallback.onTagLost(Tag)` covers the session case and nothing else, so the two are halves rather than a replacement — and `OnTagRemovedListener.onTagRemoved()` carries no `Tag`, unlike `onTagLost`, so a per-tag listener has to close over its own handle. Today the package can only learn a tag is gone by poking it and catching `TAG_LOST`. Two things must be documented or it reads as broken: after `ignore()` every call on that tag throws `IOException` (so the handle must be destroyed with it), and randomised-UID tags — most modern DESFire and EMV — cannot be debounced reliably. **Measure first:** how it interacts with an active reader-mode session is not settled by the SDK docs, and this file's own rule says measure rather than assume. |
 | `NfcAdapter.enableForegroundDispatch` filters and tech lists | API 10 | The plugin passes `null, null`, which is the documented wildcard and is what the API promises today. The only thing wildcards cannot express is a MIME type chosen at run time. Do the narrow version — one optional `List<String> mimeTypes` — or decide against it and move this row to *Out of scope*, so it stops looking overlooked. The full `IntentFilter` / `String[][]` model should not be done: `setDiscoveryTechnology` already answers the tech-list half. |
 | `HostApduService.onDeactivated`'s reason constant | API 19 | Surfaced as a bare `int` — the package's only untyped platform constant, against `NfcAdapterState`, `NfcAndroidErrorCode`, `PollingFrameType` and the rest, which are all typed. The enum itself is minor-safe; **changing the callback's signature is source-breaking**, so it is either a major or a second typed callback plus a deprecation. |
 | `ACTION_TRANSACTION_DETECTED` | API 28 | Off-host secure-element transaction events. Do **not** ship alone: it adds an `NfcEventKind` value, and so does API 36.1's `NfcEventCallback.onOffHostAidSelected` — the selection and completion halves of the same story. They ride the same major or neither does. Delivery is the real problem: the app is by definition not running, so a runtime receiver is useless and a manifest receiver merges `NFC_TRANSACTION_EVENT` into every consuming app. |
@@ -359,6 +373,15 @@ above visible at all:
 javap -constants -cp "$ANDROID_HOME/platforms/android-37.0/android.jar" android.nfc.NfcAdapter
 grep -o 'name="[^"]*" since="36.1"' "$ANDROID_HOME/platforms/android-37.0/data/api-versions.xml"
 ```
+
+Two traps in those two lines, both paid for already:
+
+* **Name the nested classes too.** `javap … android.nfc.NfcAdapter` says nothing about
+  `android.nfc.NfcAdapter$ReaderCallback`, which is where API 37's `onTagLost` sat unnoticed.
+  Walk every `<class name="android/nfc…">` in `api-versions.xml`, nested classes included,
+  instead of naming classes by hand.
+* **The `since` strings are `"37.0"`, not `"37"`.** A grep for `since="37"` matches nothing at
+  all, and reads exactly like a release that added nothing.
 
 Check `platforms/*/source.properties` for each platform's real `AndroidVersion.ApiLevel`
 before trusting a directory name.
