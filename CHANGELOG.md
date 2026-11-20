@@ -1,3 +1,45 @@
+## 3.3.1
+
+### Upgrading from 3.3.0
+
+Bump the version. Nothing in the API changed, and nothing asks anything of your app.
+
+### Fixed
+
+* **On iOS, background tag reading works again in apps that use scenes -- which, from
+  Xcode 27, is every app.**
+
+  Before: in a scene-based app, a tag read by iOS in the background never reached
+  `onNdefFromBackground`, and a tag that launched the app never reached
+  `takeInitialNdefMessage`. Nothing threw and nothing was logged; the message simply did not
+  arrive. Apps without scenes were not affected. Now: both arrive, in both kinds of app.
+
+  The cause was one missing line. 3.0.1 made the plugin conform to
+  `FlutterSceneLifeCycleDelegate` but never called `registrar.addSceneDelegate`. Flutter
+  treats a plugin that conforms as scene-aware and therefore stops forwarding the
+  app-delegate fallback to it (`pluginSupportsSceneLifecycle:` in the engine), while the
+  scene events only go to plugins that registered. So the plugin sat between the two paths
+  and received neither. The iOS 27 SDK makes the scene life cycle mandatory -- an app built
+  with it that does not adopt scenes fails to launch -- so from Xcode 27 every app was on the
+  broken path.
+
+  The application-delegate hooks stay, for apps that have not adopted scenes. The two paths
+  cannot both deliver the same activity: in a scene-based app Flutter skips the fallback for
+  this plugin, and in an app without scenes no scene event is sent. A Swift test now checks
+  that `register(with:)` asks for both.
+
+### Build
+
+* **The example app and CI build on Flutter 3.50.1.**
+
+  Flutter 3.50 refuses Gradle below 9.3.1, AGP below 9.1.1 and Kotlin below 2.4.10, and
+  deprecates `package:flutter/material.dart`. The example moved to Gradle 9.5.0, AGP 9.3.1,
+  Kotlin 2.4.20 and `package:material_ui`, and CI is pinned to one Flutter version so a new
+  release cannot break it unannounced. The plugin's own `android/build.gradle` names the same
+  AGP and Kotlin, but that only matters when the plugin is built on its own: in your app,
+  your AGP and Kotlin compile it, so nothing changes for you. The package's floors -- Flutter
+  3.44, `compileSdk` 36, `minSdk` 24, iOS 15.6 -- are unchanged.
+
 ## 3.3.0
 
 ### Upgrading from 3.2.0

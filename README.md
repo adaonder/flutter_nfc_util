@@ -76,7 +76,7 @@ New here? Everything you need for a first tag read is in [Quick start](#quick-st
 
 ```yaml
 dependencies:
-  nfc_util: ^3.3.0
+  nfc_util: ^3.3.1
 ```
 
 Requires Flutter 3.44, Android API 24, iOS 15.6.

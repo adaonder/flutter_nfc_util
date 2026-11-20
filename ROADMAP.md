@@ -14,8 +14,18 @@ The rule that decides which release something lands in:
 > adds no value to a public enum, can ship in a minor release. Anything that moves a
 > toolchain floor further than that, or adds an enum value, waits for a major.
 
-Current floors: `compileSdk 36`, `minSdk 24`, iOS deployment target 15.6, Flutter 3.44,
-AGP 8.13.2. `minSdk` and the iOS deployment target are **not** planned to move.
+Current floors: `compileSdk 36`, `minSdk 24`, iOS deployment target 15.6, Flutter 3.44.
+`minSdk` and the iOS deployment target are **not** planned to move. The plugin's own
+`android/build.gradle` names AGP 9.3.1 since 3.3.1, but that only affects building the
+plugin standalone; a consuming app's AGP is the one that compiles it.
+
+**Flutter 3.50 changes the cost of `compileSdk 37`, not the rule.** Flutter 3.50 refuses to
+build with AGP below 9.1.1, Kotlin below 2.4.10 or Gradle below 9.3.1, so every app on 3.50
+already runs an AGP 9. Whether AGP 9.1.1 compiles against API 37 has not been checked here —
+do that before relying on it. If it does, raising this package's Flutter floor to 3.50 is
+what would make the [Android 17](#android-17-api-37) group cost consumers nothing extra. That
+floor move is itself what the rule above holds for a major: apps still on Flutter 3.44–3.49
+would lose the package.
 
 **There are two axes here, and this file only ever had one.** Until 3.3.0 everything below
 came from an SDK *version diff* — what did Android 16.1 add, what did iOS 26.4 add. That
@@ -158,6 +168,14 @@ for, and the 36.1 lesson — that a minor release can carry most of the addition
 repeat here. Recorded rather than left to be re-derived: the next sweep only has to diff
 whatever ships after 37.1.
 
+**API 37.2 (Android 17 QPR2) adds nothing to `android.nfc` either — checked 2026-11-20.**
+`platforms;android-37.2` revision 2 was installed for this, and its `api-versions.xml` has
+393 members with `since="37.2"` across the SDK and none under any `android/nfc…` class,
+nested classes included; nothing there was deprecated or removed after 37.1 either. Google's
+37.2 API diff summary agrees: no `android.nfc*` package is touched, and no NFC permission or
+`FEATURE_NFC*` constant was added. As of that date there is no API 38 platform, only the
+unnumbered `android-canary-*` builds, so the next sweep starts from whatever follows 37.2.
+
 | Floor | Moved by | Costs a consumer |
 |---|---|---|
 | `compileSdk 36` → **36 + `compileSdkMinor 1`** | the API 36.1 table below | AGP 8.11.1+, and the `android-36.1` platform installed |
@@ -220,6 +238,18 @@ not be read as "no member was added".
 Verified against `iPhoneOS26.5.sdk`'s CoreNFC headers. Note the two distinct SDK floors: the
 payment session needs only iOS 26.0, everything else needs 26.4.
 
+**Re-checked against the iOS 27.2 SDK (Xcode 27.2) on 2026-11-20: iOS 27 added nothing to
+CoreNFC.** No declaration in the headers carries `ios(27…)`, the header set is the same
+eighteen files, and Apple's iOS 27 release notes have no Core NFC section. The only addition
+since the 26.5 reading is three `NFCPaymentTagReaderSessionErrorCode` values in iOS 26.6 —
+`LocationAuthorizationDenied` (500), `LocationServiceRestricted` and
+`OnDeviceLocationUnavailable` — which matter only once the payment session row below ships,
+and then as the errors its EU-only gate produces.
+
+What iOS 27 did change is around CoreNFC rather than in it: an app built with the iOS 27 SDK
+must use the scene life cycle or it does not launch. That is what exposed the scene-delegate
+registration this plugin had never made — fixed in 3.3.1; see the CHANGELOG.
+
 | API | Since | What it is for |
 |---|---|---|
 | `NFCPaymentTagReaderSession` | iOS 26.0 | An `NFCTagReaderSession` subclass that performs the SELECT-by-DF-name itself, from `com.apple.developer.nfc.readersession.iso7816.select-identifiers`, and hands back an `NFCISO7816Tag`. Accepts `NFCPollingISO14443` only. Reuses the whole existing `Iso7816` Dart surface; the only new state is a third session slot beside the tag and VAS sessions. |
@@ -242,6 +272,17 @@ about code that already ships.
 shipped in 3.3.0: `getSystemInfoAndUid()` replaces it and returns the UID, and the old one
 is deprecated rather than removed. The `SwiftPrivate` awkwardness the entry predicted was
 real — the Swift name is `__getSystemInfoAndUID(with:)`.)*
+
+### Pigeon is three majors behind
+
+The generator is pinned at 27.3; 30.0.4 is current (checked 2026-11-20). Not taken in 3.3.1
+on purpose: the regeneration is large, and 28.0.0 made generated `@FlutterApi` methods
+`suspend` in Kotlin and `async` in Swift by default. That would turn every
+`flutterApi?.onTagDiscovered(…) { _ in }` call site into a coroutine or a `Task`, which is a
+threading change on exactly the paths the crash/ANR work made deliberate. 30.0.0 also changed
+native-interop registration, which this package does not use, and needs Dart 3.12, which the
+Flutter 3.44 floor already implies. Upgrade it as its own change, with `@asyncCallback` on the
+Flutter APIs to keep today's callback shape, and with the on-device suite run afterwards.
 
 ### FeliCa card emulation has never been exposed
 
