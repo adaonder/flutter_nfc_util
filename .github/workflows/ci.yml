@@ -11,7 +11,7 @@ on:
 # break CI without any change here (3.50 wanted Gradle 9.3.1 and deprecated material.dart).
 # Bump this deliberately, after upgrading locally.
 env:
-  FLUTTER_VERSION: 3.47.8
+  FLUTTER_VERSION: 3.50.1
 
 jobs:
   dart:
