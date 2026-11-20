@@ -35,6 +35,14 @@ public class NfcUtilPlugin: NSObject, FlutterPlugin {
     NfcHostApiSetup.setUp(binaryMessenger: registrar.messenger(), api: instance)
     NfcIosHostApiSetup.setUp(binaryMessenger: registrar.messenger(), api: instance)
     registrar.addApplicationDelegate(instance)
+    // Both registrations are needed, and the second is not optional. Conforming to
+    // `FlutterSceneLifeCycleDelegate` is what Flutter checks to decide a plugin is
+    // scene-aware, and a scene-aware plugin is skipped by the app-delegate fallback
+    // (`pluginSupportsSceneLifecycle:` in FlutterPluginAppLifeCycleDelegate.mm). Conforming
+    // without registering here leaves a scene-based app delivering to neither path: no
+    // background NDEF read and no launch message, with no error anywhere. The iOS 27 SDK
+    // makes every app scene-based. The application delegate stays for apps without scenes.
+    registrar.addSceneDelegate(instance)
   }
 
   // -------------------------------------------------------------------------------------

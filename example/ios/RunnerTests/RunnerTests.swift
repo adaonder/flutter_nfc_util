@@ -24,6 +24,58 @@ import XCTest
  * CoreNFC types with no public initializer.
  */
 
+// MARK: - Registration
+
+/// Records which lifecycle hooks a plugin asks for, and nothing else.
+///
+/// The messenger accepts every handler and sends nowhere: registration only installs the
+/// Pigeon channels, it never sends on them.
+private final class RecordingRegistrar: NSObject, FlutterPluginRegistrar {
+  private final class SilentMessenger: NSObject, FlutterBinaryMessenger {
+    func send(onChannel channel: String, message: Data?) {}
+    func send(onChannel channel: String, message: Data?, binaryReply callback: FlutterBinaryReply?) {}
+    func setMessageHandlerOnChannel(
+      _ channel: String, binaryMessageHandler handler: FlutterBinaryMessageHandler?
+    ) -> FlutterBinaryMessengerConnection { 0 }
+    func cleanUpConnection(_ connection: FlutterBinaryMessengerConnection) {}
+  }
+
+  private let silentMessenger = SilentMessenger()
+  private(set) var applicationDelegates: [AnyObject] = []
+  private(set) var sceneDelegates: [AnyObject] = []
+
+  var viewController: UIViewController? { nil }
+  func messenger() -> FlutterBinaryMessenger { silentMessenger }
+  func textures() -> FlutterTextureRegistry { fatalError("not used by nfc_util") }
+  func register(_ factory: FlutterPlatformViewFactory, withId factoryId: String) {}
+  func register(
+    _ factory: FlutterPlatformViewFactory, withId factoryId: String,
+    gestureRecognizersBlockingPolicy: FlutterPlatformViewGestureRecognizersBlockingPolicy
+  ) {}
+  func publish(_ value: NSObject) {}
+  func addMethodCallDelegate(_ delegate: FlutterPlugin, channel: FlutterMethodChannel) {}
+  func addApplicationDelegate(_ delegate: FlutterPlugin) { applicationDelegates.append(delegate) }
+  func addSceneDelegate(_ delegate: FlutterSceneLifeCycleDelegate) { sceneDelegates.append(delegate) }
+  func lookupKey(forAsset asset: String) -> String { asset }
+  func lookupKey(forAsset asset: String, fromPackage package: String) -> String { asset }
+  func valuePublished(byPlugin pluginKey: String) -> NSObject? { nil }
+}
+
+class RegistrationTests: XCTestCase {
+
+  /// The plugin conforms to `FlutterSceneLifeCycleDelegate`, which makes Flutter skip it on the
+  /// app-delegate fallback. Without the scene registration, a scene-based app -- every app on
+  /// the iOS 27 SDK -- never delivers a background NDEF read or a launch message to it.
+  func testRegistersForSceneEventsAsWellAsApplicationEvents() {
+    let registrar = RecordingRegistrar()
+    NfcUtilPlugin.register(with: registrar)
+
+    XCTAssertEqual(registrar.sceneDelegates.count, 1)
+    XCTAssertEqual(registrar.applicationDelegates.count, 1)
+    XCTAssertTrue(registrar.sceneDelegates.first === registrar.applicationDelegates.first)
+  }
+}
+
 // MARK: - Thread hop
 
 class OnMainTests: XCTestCase {
