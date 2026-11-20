@@ -7,6 +7,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Pinned on purpose: `channel: stable` alone pulls whatever is newest, so a Flutter release can
+# break CI without any change here (3.50 wanted Gradle 9.3.1 and deprecated material.dart).
+# Bump this deliberately, after upgrading locally.
+env:
+  FLUTTER_VERSION: 3.50.1
+
 jobs:
   dart:
     name: analyze, format and test
@@ -17,6 +23,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
 
       - run: flutter pub get
       - run: flutter pub get -C example
@@ -55,6 +62,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
 
       - run: flutter pub get
       - run: flutter pub publish --dry-run
@@ -77,6 +85,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
 
       - run: flutter pub get -C example
       - run: flutter build apk --config-only
